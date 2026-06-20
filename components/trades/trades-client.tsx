@@ -6,7 +6,8 @@ import { useTranslation } from "react-i18next"
 import { ChartCandlestick, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
-import { ScrollArea } from "@/components/ui/scroll-area"
+import { ScrollArea as ScrollAreaPrimitive } from "radix-ui"
+import { ScrollBar } from "@/components/ui/scroll-area"
 import { PatchTabs, type PatchTabsHandle } from "./patch-tabs"
 import { TradesTable } from "./trades-table"
 import {
@@ -17,8 +18,6 @@ import {
   EmptyMedia,
   EmptyContent,
 } from "@/components/ui/empty"
-import { TradeDrawer } from "./trade-drawer"
-import { DeleteTradeDialog } from "./delete-trade-dialog"
 import { enrichTrades } from "@/lib/trades/calculations"
 import {
   createPatch,
@@ -26,22 +25,8 @@ import {
   deletePatch,
   duplicatePatch,
   getPatchTrades,
-  addTrade,
-  updateTrade,
-  deleteTrade,
 } from "@/lib/trades/actions"
-import type {
-  Patch,
-  RawTrade,
-  EnrichedTrade,
-  TradeFormData,
-} from "@/lib/trades/types"
-import type { TradeSchema } from "@/lib/schemas/trade"
-
-type DrawerState =
-  | { open: false }
-  | { open: true; mode: "add" }
-  | { open: true; mode: "edit"; trade: EnrichedTrade }
+import type { Patch, RawTrade } from "@/lib/trades/types"
 
 type Props = {
   patches: Patch[]
@@ -62,30 +47,24 @@ export function TradesClient({ patches: initialPatches }: Props) {
   const [patches, setPatches] = useState<Patch[]>(initialPatches)
   const [patchId, setPatchId] = useQueryState("patch", { defaultValue: "" })
 
-  // Initialized from localStorage on the client (SSR-safe: returns '' on server).
-  // This makes activePatchId correct on the very first client render without
-  // relying on a useEffect + nuqs URL update, which is unreliable during
-  // Next.js client-side navigation transitions.
-  const [localPatchId, setLocalPatchId] = useState<string>(() => {
-    if (typeof window === "undefined") return ""
-    try {
-      return localStorage.getItem(LAST_PATCH_KEY) ?? ""
-    } catch {
-      return ""
-    }
-  })
+  const [localPatchId, setLocalPatchId] = useState<string>("")
 
   function activatePatch(id: string) {
+    // Save current scroll before switching away
+    const vp = viewportRef.current
+    if (vp && activePatchId) {
+      scrollMemory.current.set(activePatchId, { left: vp.scrollLeft, top: vp.scrollTop })
+    }
     setLocalPatchId(id)
     setPatchId(id)
     localStorage.setItem(LAST_PATCH_KEY, id)
   }
 
   const patchTabsRef = useRef<PatchTabsHandle>(null)
-  const [rawTrades, setRawTrades] = useState<RawTrade[]>([])
+  const viewportRef = useRef<HTMLDivElement>(null)
+  const scrollMemory = useRef<Map<string, { left: number; top: number }>>(new Map())
+  const [tradeCache, setTradeCache] = useState<Map<string, RawTrade[]>>(new Map())
   const [loadingTrades, setLoadingTrades] = useState(false)
-  const [drawer, setDrawer] = useState<DrawerState>({ open: false })
-  const [deleteTarget, setDeleteTarget] = useState<EnrichedTrade | null>(null)
 
   // URL param (patchId) takes priority; then localStorage (localPatchId); then last visible.
   const activePatchId =
@@ -94,23 +73,49 @@ export function TradesClient({ patches: initialPatches }: Props) {
     patches.filter((p) => !p.is_hidden).at(-1)?.id ??
     ""
 
-  // Sync URL on mount. Deferred to the next macrotask so the Next.js navigation
-  // transition has fully settled before nuqs tries to push a URL update
-  // (calling setPatchId during an active transition gets silently dropped).
-  // Also clears a stale patch param when there are no valid patches.
+  // On mount: read localStorage first, then compute the correct target and sync
+  // the URL param. Both steps must happen in one effect so the URL push uses
+  // the stored patch — if split into two effects, the URL sync effect captures
+  // activePatchId before localPatchId is set and pushes the wrong fallback.
+  // Deferred via setTimeout(0) so the Next.js navigation transition has settled.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    const target = activePatchId
+    let storedId = ""
+    try {
+      storedId = localStorage.getItem(LAST_PATCH_KEY) ?? ""
+    } catch {}
+    if (storedId) setLocalPatchId(storedId)
+
+    const target =
+      patches.find((p) => p.id === patchId && !p.is_hidden)?.id ??
+      patches.find((p) => p.id === storedId && !p.is_hidden)?.id ??
+      patches.filter((p) => !p.is_hidden).at(-1)?.id ??
+      ""
+
     const timer = setTimeout(() => setPatchId(target || null), 0)
     return () => clearTimeout(timer)
   }, [])
 
   useEffect(() => {
     if (!activePatchId) return
-    setLoadingTrades(true)
+    const cached = tradeCache.has(activePatchId)
+    if (!cached) setLoadingTrades(true)
     getPatchTrades(activePatchId).then(({ data }) => {
-      setRawTrades(data)
+      setTradeCache((prev) => new Map(prev).set(activePatchId, data))
       setLoadingTrades(false)
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePatchId])
+
+  // Restore scroll position for the newly active patch after render
+  useEffect(() => {
+    if (!activePatchId) return
+    const saved = scrollMemory.current.get(activePatchId)
+    requestAnimationFrame(() => {
+      const vp = viewportRef.current
+      if (!vp) return
+      vp.scrollLeft = saved?.left ?? 0
+      vp.scrollTop = saved?.top ?? 0
     })
   }, [activePatchId])
 
@@ -148,6 +153,7 @@ export function TradesClient({ patches: initialPatches }: Props) {
   async function handleDeletePatch(id: string) {
     const { error } = await deletePatch(id)
     if (!error) {
+      scrollMemory.current.delete(id)
       const next = activePatchId === id ? fallbackPatch(patches, id) : null
       setPatches((prev) => prev.filter((p) => p.id !== id))
       if (next) activatePatch(next)
@@ -185,89 +191,65 @@ export function TradesClient({ patches: initialPatches }: Props) {
     )
   }
 
-  // Trade handlers
-  async function handleSave(data: TradeSchema): Promise<string | null> {
-    const formData = data as TradeFormData
-    let result: { error: string | null }
-    if (drawer.open && drawer.mode === "edit") {
-      result = await updateTrade(drawer.trade.id, formData)
-    } else {
-      result = await addTrade(activePatchId, formData)
-    }
-    if (result.error) return result.error
-    const { data: fresh } = await getPatchTrades(activePatchId)
-    setRawTrades(fresh)
-    setDrawer({ open: false })
-    return null
-  }
-
-  async function handleDeleteConfirm(tradeId: string) {
-    await deleteTrade(tradeId)
-    const { data: fresh } = await getPatchTrades(activePatchId)
-    setRawTrades(fresh)
-    setDeleteTarget(null)
-  }
-
+  const rawTrades = tradeCache.get(activePatchId) ?? []
   const enriched = enrichTrades(rawTrades)
   const allHidden = patches.length > 0 && patches.every((p) => p.is_hidden)
   const noPatches = patches.length === 0
+  const activePatch = patches.find((p) => p.id === activePatchId)
 
   return (
     <div className="flex h-full flex-col">
-      {!noPatches && !allHidden && (
-        <div className="flex items-center border-b px-4 py-2">
-          <Button
-            className="ms-auto"
-            onClick={() => setDrawer({ open: true, mode: "add" })}
-          >
-            <Plus className="size-4" />
-            {t("trades.addTrade")}
-          </Button>
+      {activePatch && !noPatches && !allHidden && (
+        <div className="px-4 py-3">
+          <h1 className="text-sm font-semibold">{activePatch.name}</h1>
         </div>
       )}
 
-      <ScrollArea className="flex-1">
-        {noPatches || allHidden ? (
-          <div className="flex h-full items-center justify-center">
-            <Empty>
-              <EmptyHeader>
-                <EmptyMedia
-                  variant="icon"
-                  className="bg-foreground/10 text-foreground"
-                >
-                  <ChartCandlestick />
-                </EmptyMedia>
-                <EmptyTitle>
-                  {noPatches
-                    ? t("trades.patches.emptyTitle")
-                    : t("trades.patches.allHiddenTitle")}
-                </EmptyTitle>
-                <EmptyDescription>
-                  {noPatches
-                    ? t("trades.patches.emptyBody")
-                    : t("trades.patches.allHiddenBody")}
-                </EmptyDescription>
-              </EmptyHeader>
-              <EmptyContent>
-                <Button onClick={() => patchTabsRef.current?.openCreate()}>
-                  <Plus className="size-4" />
-                  {t("trades.patches.createPatch")}
-                </Button>
-              </EmptyContent>
-            </Empty>
-          </div>
-        ) : loadingTrades ? (
-          <div className="flex h-48 items-center justify-center gap-2 text-muted-foreground">
-            <Spinner />
-          </div>
-        ) : (
-          <TradesTable
-            trades={enriched}
-            onEdit={(trade) => setDrawer({ open: true, mode: "edit", trade })}
-            onDelete={(trade) => setDeleteTarget(trade)}
-          />
-        )}
-      </ScrollArea>
+      {noPatches || allHidden ? (
+        <div className="flex flex-1 items-center justify-center">
+          <Empty>
+            <EmptyHeader>
+              <EmptyMedia
+                variant="icon"
+                className="bg-foreground/10 text-foreground"
+              >
+                <ChartCandlestick />
+              </EmptyMedia>
+              <EmptyTitle>
+                {noPatches
+                  ? t("trades.patches.emptyTitle")
+                  : t("trades.patches.allHiddenTitle")}
+              </EmptyTitle>
+              <EmptyDescription>
+                {noPatches
+                  ? t("trades.patches.emptyBody")
+                  : t("trades.patches.allHiddenBody")}
+              </EmptyDescription>
+            </EmptyHeader>
+            <EmptyContent>
+              <Button onClick={() => patchTabsRef.current?.openCreate()}>
+                <Plus className="size-4" />
+                {t("trades.patches.createPatch")}
+              </Button>
+            </EmptyContent>
+          </Empty>
+        </div>
+      ) : (
+        <ScrollAreaPrimitive.Root className="relative flex-1 overflow-hidden">
+          <ScrollAreaPrimitive.Viewport ref={viewportRef} className="size-full rounded-[inherit]">
+            {loadingTrades ? (
+              <div className="flex h-48 items-center justify-center gap-2 text-muted-foreground">
+                <Spinner />
+              </div>
+            ) : (
+              <TradesTable trades={enriched} />
+            )}
+          </ScrollAreaPrimitive.Viewport>
+          <ScrollBar orientation="vertical" />
+          <ScrollBar orientation="horizontal" />
+          <ScrollAreaPrimitive.Corner />
+        </ScrollAreaPrimitive.Root>
+      )}
 
       <div className="h-9 shrink-0 border-t bg-background">
         <PatchTabs
@@ -285,21 +267,6 @@ export function TradesClient({ patches: initialPatches }: Props) {
           onReorder={handleReorder}
         />
       </div>
-
-      <TradeDrawer
-        open={drawer.open}
-        initialData={
-          drawer.open && drawer.mode === "edit" ? drawer.trade : undefined
-        }
-        onClose={() => setDrawer({ open: false })}
-        onSave={handleSave}
-      />
-
-      <DeleteTradeDialog
-        trade={deleteTarget}
-        onClose={() => setDeleteTarget(null)}
-        onConfirm={handleDeleteConfirm}
-      />
     </div>
   )
 }

@@ -115,3 +115,11 @@ Run if the `patches` column is still named `max_trades`:
 ```sql
 alter table public.patches rename column max_trades to patch_limit;
 ```
+
+---
+
+## 2026-06-20 — Rename coin to ticker in trades
+
+```sql
+alter table public.trades rename column coin to ticker;
+```

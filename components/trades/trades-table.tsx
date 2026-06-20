@@ -7,9 +7,13 @@ import {
   flexRender,
   type ColumnDef,
 } from '@tanstack/react-table'
-import { Pencil, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Button } from '@/components/ui/button'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import {
   Table,
   TableBody,
@@ -22,8 +26,6 @@ import type { EnrichedTrade } from '@/lib/trades/types'
 
 type Props = {
   trades: EnrichedTrade[]
-  onEdit: (trade: EnrichedTrade) => void
-  onDelete: (trade: EnrichedTrade) => void
 }
 
 function fmtCurrency(value: number): string {
@@ -52,35 +54,48 @@ function fmtTime(timeStr: string): string {
   return `${h12}:${mStr} ${ampm}`
 }
 
-export function TradesTable({ trades, onEdit, onDelete }: Props) {
+function HeaderCell({ label, tooltip }: { label: string; tooltip: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger>
+        {label}
+      </TooltipTrigger>
+      <TooltipContent side="bottom">
+        {tooltip}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
+export function TradesTable({ trades }: Props) {
   const { t } = useTranslation()
 
   const columns = useMemo<ColumnDef<EnrichedTrade>[]>(
     () => [
       {
         accessorKey: 'trade_number',
-        header: t('trades.columns.number'),
+        header: () => <HeaderCell label={t('trades.columns.number')} tooltip={t('trades.columnTooltips.number')} />,
         cell: ({ getValue }) => (
           <span className="font-medium tabular-nums">{getValue<number>()}</span>
         ),
       },
       {
         accessorKey: 'trade_date',
-        header: t('trades.columns.date'),
+        header: () => <HeaderCell label={t('trades.columns.date')} tooltip={t('trades.columnTooltips.date')} />,
         cell: ({ getValue }) => fmtDate(getValue<string>()),
       },
       {
         accessorKey: 'trade_time',
-        header: t('trades.columns.time'),
+        header: () => <HeaderCell label={t('trades.columns.time')} tooltip={t('trades.columnTooltips.time')} />,
         cell: ({ getValue }) => fmtTime(getValue<string>()),
       },
       {
-        accessorKey: 'coin',
-        header: t('trades.columns.coin'),
+        accessorKey: 'ticker',
+        header: () => <HeaderCell label={t('trades.columns.ticker')} tooltip={t('trades.columnTooltips.ticker')} />,
       },
       {
         accessorKey: 'direction',
-        header: t('trades.columns.direction'),
+        header: () => <HeaderCell label={t('trades.columns.direction')} tooltip={t('trades.columnTooltips.direction')} />,
         cell: ({ getValue }) => {
           const v = getValue<string>()
           return (
@@ -95,42 +110,40 @@ export function TradesTable({ trades, onEdit, onDelete }: Props) {
       },
       {
         accessorKey: 'order_type',
-        header: t('trades.columns.orderType'),
+        header: () => <HeaderCell label={t('trades.columns.orderType')} tooltip={t('trades.columnTooltips.orderType')} />,
         cell: ({ getValue }) => t(`trades.orderType.${getValue<string>()}`),
       },
       {
         accessorKey: 'avg_entry',
-        header: t('trades.columns.avgEntry'),
+        header: () => <HeaderCell label={t('trades.columns.avgEntry')} tooltip={t('trades.columnTooltips.avgEntry')} />,
         cell: ({ getValue }) => (
           <span className="tabular-nums">{fmtCurrency(getValue<number>())}</span>
         ),
       },
       {
         accessorKey: 'stop_loss',
-        header: t('trades.columns.stopLoss'),
+        header: () => <HeaderCell label={t('trades.columns.stopLoss')} tooltip={t('trades.columnTooltips.stopLoss')} />,
         cell: ({ getValue }) => (
           <span className="tabular-nums">{fmtCurrency(getValue<number>())}</span>
         ),
       },
       {
         accessorKey: 'avg_exit',
-        header: t('trades.columns.avgExit'),
+        header: () => <HeaderCell label={t('trades.columns.avgExit')} tooltip={t('trades.columnTooltips.avgExit')} />,
         cell: ({ getValue }) => (
           <span className="tabular-nums">{fmtCurrency(getValue<number>())}</span>
         ),
       },
       {
         accessorKey: 'risk',
-        header: t('trades.columns.risk'),
+        header: () => <HeaderCell label={t('trades.columns.risk')} tooltip={t('trades.columnTooltips.risk')} />,
         cell: ({ getValue }) => (
           <span className="tabular-nums">{fmtCurrency(getValue<number>())}</span>
         ),
       },
       {
         accessorKey: 'realised_loss',
-        header: () => (
-          <span className="text-muted-foreground">{t('trades.columns.realisedLoss')}</span>
-        ),
+        header: () => <HeaderCell label={t('trades.columns.realisedLoss')} tooltip={t('trades.columnTooltips.realisedLoss')} />,
         cell: ({ getValue }) => {
           const v = getValue<number | null>()
           if (v === null) return null
@@ -139,9 +152,7 @@ export function TradesTable({ trades, onEdit, onDelete }: Props) {
       },
       {
         accessorKey: 'realised_win',
-        header: () => (
-          <span className="text-muted-foreground">{t('trades.columns.realisedWin')}</span>
-        ),
+        header: () => <HeaderCell label={t('trades.columns.realisedWin')} tooltip={t('trades.columnTooltips.realisedWin')} />,
         cell: ({ getValue }) => {
           const v = getValue<number | null>()
           if (v === null) return null
@@ -154,9 +165,7 @@ export function TradesTable({ trades, onEdit, onDelete }: Props) {
       },
       {
         accessorKey: 'deviation',
-        header: () => (
-          <span className="text-muted-foreground">{t('trades.columns.deviation')}</span>
-        ),
+        header: () => <HeaderCell label={t('trades.columns.deviation')} tooltip={t('trades.columnTooltips.deviation')} />,
         cell: ({ getValue }) => {
           const v = getValue<number | null>()
           if (v === null) return null
@@ -165,9 +174,7 @@ export function TradesTable({ trades, onEdit, onDelete }: Props) {
       },
       {
         accessorKey: 'r_multiple',
-        header: () => (
-          <span className="text-muted-foreground">{t('trades.columns.rMultiple')}</span>
-        ),
+        header: () => <HeaderCell label={t('trades.columns.rMultiple')} tooltip={t('trades.columnTooltips.rMultiple')} />,
         cell: ({ getValue }) => {
           const v = getValue<number>()
           return (
@@ -183,9 +190,7 @@ export function TradesTable({ trades, onEdit, onDelete }: Props) {
       },
       {
         accessorKey: 'risk_volatility',
-        header: () => (
-          <span className="text-muted-foreground">{t('trades.columns.riskVolatility')}</span>
-        ),
+        header: () => <HeaderCell label={t('trades.columns.riskVolatility')} tooltip={t('trades.columnTooltips.riskVolatility')} />,
         cell: ({ getValue }) => {
           const v = getValue<number | null>()
           if (v === null) return null
@@ -194,9 +199,7 @@ export function TradesTable({ trades, onEdit, onDelete }: Props) {
       },
       {
         accessorKey: 'cumulative_pnl',
-        header: () => (
-          <span className="text-muted-foreground">{t('trades.columns.cumulativePnl')}</span>
-        ),
+        header: () => <HeaderCell label={t('trades.columns.cumulativePnl')} tooltip={t('trades.columnTooltips.cumulativePnl')} />,
         cell: ({ getValue }) => {
           const v = getValue<number>()
           return (
@@ -212,9 +215,7 @@ export function TradesTable({ trades, onEdit, onDelete }: Props) {
       },
       {
         accessorKey: 'cumulative_r',
-        header: () => (
-          <span className="text-muted-foreground">{t('trades.columns.cumulativeR')}</span>
-        ),
+        header: () => <HeaderCell label={t('trades.columns.cumulativeR')} tooltip={t('trades.columnTooltips.cumulativeR')} />,
         cell: ({ getValue }) => {
           const v = getValue<number>()
           return (
@@ -230,7 +231,7 @@ export function TradesTable({ trades, onEdit, onDelete }: Props) {
       },
       {
         accessorKey: 'rules_followed',
-        header: t('trades.columns.rulesFollowed'),
+        header: () => <HeaderCell label={t('trades.columns.rulesFollowed')} tooltip={t('trades.columnTooltips.rulesFollowed')} />,
         cell: ({ getValue }) => {
           const v = getValue<boolean>()
           return (
@@ -245,34 +246,10 @@ export function TradesTable({ trades, onEdit, onDelete }: Props) {
       },
       {
         accessorKey: 'setup_type',
-        header: t('trades.columns.setupType'),
-      },
-      {
-        id: 'actions',
-        header: t('trades.columns.actions'),
-        cell: ({ row }) => (
-          <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => onEdit(row.original)}
-              aria-label={t('trades.editTrade')}
-            >
-              <Pencil className="size-3.5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => onDelete(row.original)}
-              aria-label={t('trades.deleteTrade')}
-            >
-              <Trash2 className="size-3.5 text-destructive" />
-            </Button>
-          </div>
-        ),
+        header: () => <HeaderCell label={t('trades.columns.setupType')} tooltip={t('trades.columnTooltips.setupType')} />,
       },
     ],
-    [t, onEdit, onDelete]
+    [t]
   )
 
   const table = useReactTable({
@@ -282,7 +259,8 @@ export function TradesTable({ trades, onEdit, onDelete }: Props) {
   })
 
   return (
-    <div className="border-b bg-background overflow-auto">
+    <TooltipProvider>
+    <div className="bg-background overflow-auto">
       <Table>
         <TableHeader>
           {table.getHeaderGroups().map((hg) => (
@@ -297,14 +275,15 @@ export function TradesTable({ trades, onEdit, onDelete }: Props) {
         </TableHeader>
         <TableBody>
           {table.getRowModel().rows.length === 0 ? (
-            <TableRow>
-              <TableCell
-                colSpan={columns.length}
-                className="h-32 text-center text-muted-foreground"
-              >
-                {t('trades.emptyState')}
-              </TableCell>
-            </TableRow>
+            Array.from({ length: 5 }).map((_, i) => (
+              <TableRow key={i}>
+                {columns.map((col) => (
+                  <TableCell key={'id' in col ? col.id : col.accessorKey as string} className="whitespace-nowrap">
+                    &nbsp;
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))
           ) : (
             table.getRowModel().rows.map((row) => (
               <TableRow key={row.id}>
@@ -319,5 +298,6 @@ export function TradesTable({ trades, onEdit, onDelete }: Props) {
         </TableBody>
       </Table>
     </div>
+    </TooltipProvider>
   )
 }

@@ -4,7 +4,7 @@ import * as yup from 'yup'
 export const tradeSchema = yup.object({
   trade_date: yup.string().required('validation.trades.dateRequired'),
   trade_time: yup.string().required('validation.trades.timeRequired'),
-  coin: yup.string().required('validation.trades.coinRequired'),
+  ticker: yup.string().required('validation.trades.tickerRequired'),
   direction: yup
     .mixed<'long' | 'short'>()
     .oneOf(['long', 'short'] as const, 'validation.trades.directionRequired')

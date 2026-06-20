@@ -16,7 +16,7 @@ export type RawTrade = {
   trade_number: number
   trade_date: string       // "YYYY-MM-DD"
   trade_time: string       // "HH:MM:SS"
-  coin: string
+  ticker: string
   direction: 'long' | 'short'
   order_type: 'market' | 'limit'
   avg_entry: number
@@ -43,7 +43,7 @@ export type EnrichedTrade = RawTrade & {
 export type TradeFormData = {
   trade_date: string         // "YYYY-MM-DD"
   trade_time: string         // "HH:MM" from form input, converted to "HH:MM:SS" before saving
-  coin: string
+  ticker: string
   direction: 'long' | 'short'
   order_type: 'market' | 'limit'
   avg_entry: number

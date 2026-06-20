@@ -106,7 +106,7 @@ create table public.trades (
   trade_number int not null,
   trade_date date not null,
   trade_time time not null,
-  coin text not null,
+  ticker text not null,
   direction text check (direction in ('long', 'short')) not null,
   order_type text check (order_type in ('market', 'limit')) not null,
   avg_entry numeric(20, 8) not null,
