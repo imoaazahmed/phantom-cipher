@@ -112,7 +112,10 @@
       "cumulativeR": "Cumulative R",
       "rulesFollowed": "Rules?",
       "setupType": "Setup Type",
-      "actions": "Actions"
+      "actions": "Actions",
+      "hide": "Hide",
+      "delete": "Delete",
+      "manageColumns": "Manage Columns"
     },
     "columnTooltips": {
       "number": "Trade number",

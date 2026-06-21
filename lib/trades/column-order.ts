@@ -41,3 +41,24 @@ export function resolveColumnOrder(
   const appended = allKeys.filter((id) => !savedSet.has(id))
   return [...kept, ...appended]
 }
+
+export const COLUMN_LABELS: Record<string, string> = {
+  trade_date:      'trades.columns.date',
+  trade_time:      'trades.columns.time',
+  ticker:          'trades.columns.ticker',
+  direction:       'trades.columns.direction',
+  order_type:      'trades.columns.orderType',
+  avg_entry:       'trades.columns.avgEntry',
+  stop_loss:       'trades.columns.stopLoss',
+  avg_exit:        'trades.columns.avgExit',
+  risk:            'trades.columns.risk',
+  realised_loss:   'trades.columns.realisedLoss',
+  realised_win:    'trades.columns.realisedWin',
+  deviation:       'trades.columns.deviation',
+  r_multiple:      'trades.columns.rMultiple',
+  risk_volatility: 'trades.columns.riskVolatility',
+  cumulative_pnl:  'trades.columns.cumulativePnl',
+  cumulative_r:    'trades.columns.cumulativeR',
+  rules_followed:  'trades.columns.rulesFollowed',
+  setup_type:      'trades.columns.setupType',
+}

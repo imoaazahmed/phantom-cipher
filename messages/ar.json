@@ -112,7 +112,10 @@
       "cumulativeR": "R التراكمي",
       "rulesFollowed": "القواعد؟",
       "setupType": "نوع الإعداد",
-      "actions": "إجراءات"
+      "actions": "إجراءات",
+      "hide": "إخفاء",
+      "delete": "حذف",
+      "manageColumns": "إدارة الأعمدة"
     },
     "columnTooltips": {
       "number": "رقم الصفقة",
