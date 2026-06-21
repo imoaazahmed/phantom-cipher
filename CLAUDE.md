@@ -4,6 +4,10 @@
 
 **Never commit or push unless explicitly told to.** Always show changes first and wait for the user to say "commit" or "push".
 
+## Design System
+
+**No rounded borders.** The design system is intentionally sharp-cornered — never use `rounded`, `rounded-sm`, `rounded-md`, `rounded-lg`, etc. on any UI element (buttons, inputs, cards, menus, hover states, dialogs, etc.). Use `rounded-none` if you need to explicitly override a default.
+
 ## Performance
 
 **Performance is the #1 priority.** Every decision must favor speed:

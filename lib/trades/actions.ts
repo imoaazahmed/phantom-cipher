@@ -3,7 +3,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import type { Patch, RawTrade, TradeFormData } from './types'
+import type { Patch, RawTrade, TradeFormData, ColumnSetting, FormatType } from './types'
 
 export async function createPatch(
   name: string,
@@ -216,6 +216,88 @@ export async function deleteTrade(tradeId: string): Promise<{ error: string | nu
   if (!user) return { error: 'errors.unauthorized' }
 
   const { error } = await supabase.from('trades').delete().eq('id', tradeId).eq('user_id', user.id)
+  if (error) return { error: 'errors.generic' }
+  revalidatePath('/trades')
+  return { error: null }
+}
+
+export async function getColumnSettings(): Promise<ColumnSetting[]> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return []
+
+  const { data } = await supabase
+    .from('column_settings')
+    .select('*')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: true })
+
+  return (data ?? []) as ColumnSetting[]
+}
+
+export async function createColumnSetting(input: {
+  name: string
+  description?: string
+  format_type: FormatType
+}): Promise<{ data: ColumnSetting | null; error: string | null }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { data: null, error: 'errors.unauthorized' }
+
+  const column_id = `custom_${crypto.randomUUID()}`
+
+  const { data, error } = await supabase
+    .from('column_settings')
+    .insert({
+      user_id: user.id,
+      column_id,
+      name: input.name,
+      description: input.description || null,
+      format_type: input.format_type,
+    })
+    .select()
+    .single()
+
+  if (error) return { data: null, error: 'errors.generic' }
+  revalidatePath('/trades')
+  return { data: data as ColumnSetting, error: null }
+}
+
+export async function updateColumnSetting(
+  columnId: string,
+  input: { name: string; description?: string; format_type: FormatType }
+): Promise<{ error: string | null }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'errors.unauthorized' }
+
+  const { error } = await supabase
+    .from('column_settings')
+    .update({
+      name: input.name,
+      description: input.description || null,
+      format_type: input.format_type,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('column_id', columnId)
+    .eq('user_id', user.id)
+
+  if (error) return { error: 'errors.generic' }
+  revalidatePath('/trades')
+  return { error: null }
+}
+
+export async function deleteColumnSetting(columnId: string): Promise<{ error: string | null }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'errors.unauthorized' }
+
+  const { error } = await supabase
+    .from('column_settings')
+    .delete()
+    .eq('column_id', columnId)
+    .eq('user_id', user.id)
+
   if (error) return { error: 'errors.generic' }
   revalidatePath('/trades')
   return { error: null }

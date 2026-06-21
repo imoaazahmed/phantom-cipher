@@ -113,10 +113,15 @@
       "rulesFollowed": "Rules?",
       "setupType": "Setup Type",
       "actions": "Actions",
-      "hide": "Hide",
-      "delete": "Delete",
-      "manageColumns": "Manage Columns",
-      "showAll": "Show All"
+      "hide": "Hide Column",
+      "rename": "Edit Column",
+      "delete": "Delete Column",
+      "manageColumns": "Columns Manager",
+      "showAll": "Show All",
+      "searchPlaceholder": "Search columns…",
+      "searchEmpty": "No columns match your search.",
+      "columnSettings": "Column Settings",
+      "addColumn": "Add Column"
     },
     "columnTooltips": {
       "number": "Trade number",
@@ -172,6 +177,31 @@
       "market": "Market",
       "limit": "Limit"
     },
+    "deleteColumnDialog": {
+      "title": "Delete \"{{name}}\"?",
+      "description": "This will permanently remove the column and all its settings. This action cannot be undone.",
+      "hint": "Consider hiding the column instead — you can always show it again later.",
+      "hide": "Hide Instead",
+      "confirm": "Delete Column"
+    },
+    "addColumnDialog": {
+      "nameLabel": "Column Name",
+      "namePlaceholder": "e.g. Notes",
+      "descriptionLabel": "Description",
+      "descriptionPlaceholder": "Optional. Shown in the column header tooltip.",
+      "formatLabel": "Format",
+      "formatAuto": "Automatic",
+      "formatText": "Text",
+      "formatCurrency": "Currency $",
+      "formatPercent": "Percent %",
+      "formatDate": "Date",
+      "formatTime": "Time",
+      "formatNumber": "Number",
+      "save": "Add Column",
+      "editTitle": "Edit Column",
+      "saveEdit": "Save Changes",
+      "noDescriptionHint": "Add a description to this column to show in the tooltip"
+    },
     "patches": {
       "newTitle": "New Patch",
       "renameTitle": "Rename Patch",
@@ -220,6 +250,9 @@
     "confirmPassword": {
       "required": "Please confirm your password",
       "mismatch": "Passwords do not match"
+    },
+    "columnSetting": {
+      "nameRequired": "Column name is required"
     },
     "trades": {
       "tickerRequired": "Ticker is required",

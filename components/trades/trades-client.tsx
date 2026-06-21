@@ -28,10 +28,11 @@ import {
   duplicatePatch,
   getPatchTrades,
 } from "@/lib/trades/actions"
-import type { Patch, RawTrade } from "@/lib/trades/types"
+import type { Patch, RawTrade, ColumnSetting } from "@/lib/trades/types"
 
 type Props = {
   patches: Patch[]
+  columnSettings: ColumnSetting[]
 }
 
 const LAST_PATCH_KEY = "trading-logs:last-patch"
@@ -45,7 +46,7 @@ function fallbackPatch(list: Patch[], removedId: string): string {
   return list.find((p) => p.id !== removedId && !p.is_hidden)?.id ?? ""
 }
 
-export function TradesClient({ patches: initialPatches }: Props) {
+export function TradesClient({ patches: initialPatches, columnSettings }: Props) {
   const { t } = useTranslation()
   const [patches, setPatches] = useState<Patch[]>(initialPatches)
   const [patchId, setPatchId] = useQueryState("patch", { defaultValue: "" })
@@ -257,6 +258,7 @@ export function TradesClient({ patches: initialPatches }: Props) {
             columnVisibility={columnVisibility}
             onVisibilityChange={handleVisibilityChange}
             onShowAll={handleShowAll}
+            columnSettings={columnSettings}
           />
         </div>
       )}
@@ -307,6 +309,7 @@ export function TradesClient({ patches: initialPatches }: Props) {
                 onColumnReorder={handleColumnReorder}
                 columnVisibility={columnVisibility}
                 onHideColumn={handleHideColumn}
+                columnSettings={columnSettings}
               />
             )}
           </ScrollAreaPrimitive.Viewport>

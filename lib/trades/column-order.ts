@@ -42,6 +42,16 @@ export function resolveColumnOrder(
   return [...kept, ...appended]
 }
 
+export const REQUIRED_COLUMNS = new Set([
+  'trade_date',
+  'trade_time',
+  'avg_entry',
+  'avg_exit',
+  'risk',
+  'realised_loss',
+  'realised_win',
+])
+
 export const COLUMN_LABELS: Record<string, string> = {
   trade_date:      'trades.columns.date',
   trade_time:      'trades.columns.time',

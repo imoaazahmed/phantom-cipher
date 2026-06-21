@@ -135,3 +135,36 @@ alter table public.patches
 
 `null` means default column order. Value is an ordered array of column key
 strings (accessorKey values), excluding the always-pinned `trade_number` column.
+
+---
+
+## 2026-06-21 — Add column_settings table
+
+Stores per-user column metadata: custom columns added by the user, and overrides for built-in column settings (format type, description, etc.).
+
+```sql
+create table public.column_settings (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid references auth.users(id) on delete cascade not null,
+  column_id text not null,
+  name text not null,
+  description text,
+  format_type text not null default 'auto'
+    check (format_type in ('auto', 'text', 'currency', 'number', 'percent', 'date', 'time')),
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  unique (user_id, column_id)
+);
+
+alter table public.column_settings enable row level security;
+
+create policy "Users can manage their own column settings"
+  on public.column_settings for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create index column_settings_user_id_idx on public.column_settings (user_id);
+```
+
+Custom columns have a `column_id` prefixed with `custom_` (e.g. `custom_<uuid>`).
+Built-in column overrides use the column's `accessorKey` as `column_id` (e.g. `avg_entry`).

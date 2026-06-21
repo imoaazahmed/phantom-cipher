@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { TradesClient } from '@/components/trades/trades-client'
-import type { Patch } from '@/lib/trades/types'
+import type { Patch, ColumnSetting } from '@/lib/trades/types'
 
 export default async function TradesPage() {
   const supabase = await createClient()
@@ -10,13 +10,21 @@ export default async function TradesPage() {
 
   if (!user) return null
 
-  const { data: rows } = await supabase
-    .from('patches')
-    .select('*')
-    .eq('user_id', user.id)
-    .order('sort_order', { ascending: true })
+  const [{ data: rows }, { data: settingsRows }] = await Promise.all([
+    supabase
+      .from('patches')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('sort_order', { ascending: true }),
+    supabase
+      .from('column_settings')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: true }),
+  ])
 
   const patches: Patch[] = (rows ?? []) as Patch[]
+  const columnSettings: ColumnSetting[] = (settingsRows ?? []) as ColumnSetting[]
 
-  return <TradesClient patches={patches} />
+  return <TradesClient patches={patches} columnSettings={columnSettings} />
 }

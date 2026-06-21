@@ -143,10 +143,39 @@ create index trades_trade_date_idx on public.trades (trade_date desc);
 
 ---
 
+## 4. column_settings
+
+```sql
+create table public.column_settings (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid references auth.users(id) on delete cascade not null,
+  column_id text not null,
+  name text not null,
+  description text,
+  format_type text not null default 'auto'
+    check (format_type in ('auto', 'text', 'currency', 'number', 'percent', 'date', 'time')),
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  unique (user_id, column_id)
+);
+
+alter table public.column_settings enable row level security;
+
+create policy "Users can manage their own column settings"
+  on public.column_settings for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create index column_settings_user_id_idx on public.column_settings (user_id);
+```
+
+---
+
 ## Checklist
 
 - [ ] Run `profiles` table + trigger first
 - [ ] Run `patches` table second (trades references patches)
 - [ ] Run `trades` table third
+- [ ] Run `column_settings` table fourth
 - [ ] Confirm RLS is enabled: Table Editor → each table → RLS badge shows "Enabled"
 - [ ] Test with a real signup to confirm the profile trigger fires

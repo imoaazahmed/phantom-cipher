@@ -30,6 +30,7 @@ import {
   Pencil,
   Plus,
   Trash2,
+  X,
 } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import {
@@ -450,6 +451,9 @@ export const PatchTabs = forwardRef<PatchTabsHandle, Props>(function PatchTabs({
         onOpenChange={(o) => !o && setDeleteTarget(null)}
       >
         <AlertDialogContent>
+          <AlertDialogCancel size="icon-sm" variant="ghost" className="absolute inset-e-3 top-3" disabled={isDeleting}>
+            <X className="size-4" />
+          </AlertDialogCancel>
           <AlertDialogHeader>
             <AlertDialogTitle>
               {t("trades.patches.deleteConfirmTitle", {

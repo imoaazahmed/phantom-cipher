@@ -113,17 +113,22 @@
       "rulesFollowed": "القواعد؟",
       "setupType": "نوع الإعداد",
       "actions": "إجراءات",
-      "hide": "إخفاء",
-      "delete": "حذف",
-      "manageColumns": "إدارة الأعمدة",
-      "showAll": "إظهار الكل"
+      "hide": "إخفاء العمود",
+      "rename": "تعديل العمود",
+      "delete": "حذف العمود",
+      "manageColumns": "مدير الأعمدة",
+      "showAll": "إظهار الكل",
+      "searchPlaceholder": "بحث في الأعمدة…",
+      "searchEmpty": "لا توجد أعمدة تطابق بحثك.",
+      "columnSettings": "إعدادات العمود",
+      "addColumn": "إضافة عمود"
     },
     "columnTooltips": {
       "number": "رقم الصفقة",
       "date": "التاريخ الذي تم فيه إدخال الصفقة أو فتح المركز",
       "time": "الوقت الذي تم فيه إدخال الصفقة أو فتح المركز",
       "ticker": "الرمز التداولي، مثل BTC أو ETH",
-      "direction": "Long / Short",
+      "direction": "شراء / بيع",
       "orderType": "Market / Limit",
       "avgEntry": "سعر الدخول لصفقة واحدة، أو متوسط سعر الدخول عند الدخول الجزئي",
       "stopLoss": "مستوى السعر الذي تم تعيين وقف الخسارة عنده",
@@ -171,6 +176,31 @@
     "orderType": {
       "market": "سوق",
       "limit": "محدد"
+    },
+    "deleteColumnDialog": {
+      "title": "حذف \"{{name}}\"؟",
+      "description": "سيؤدي هذا إلى إزالة العمود وجميع إعداداته بشكل دائم. لا يمكن التراجع عن هذا الإجراء.",
+      "hint": "فكّر في إخفاء العمود بدلاً من ذلك — يمكنك إظهاره مرة أخرى في أي وقت.",
+      "hide": "إخفاء بدلاً من ذلك",
+      "confirm": "حذف العمود"
+    },
+    "addColumnDialog": {
+      "nameLabel": "اسم العمود",
+      "namePlaceholder": "مثال: ملاحظات",
+      "descriptionLabel": "الوصف",
+      "descriptionPlaceholder": "اختياري. يُعرض في تلميح رأس العمود.",
+      "formatLabel": "التنسيق",
+      "formatAuto": "تلقائي",
+      "formatText": "نص",
+      "formatCurrency": "عملة $",
+      "formatPercent": "نسبة %",
+      "formatDate": "تاريخ",
+      "formatTime": "وقت",
+      "formatNumber": "رقم",
+      "save": "إضافة عمود",
+      "editTitle": "تعديل العمود",
+      "saveEdit": "حفظ التغييرات",
+      "noDescriptionHint": "أضف وصفاً لهذا العمود لعرضه في تلميح الأداة"
     },
     "patches": {
       "newTitle": "دفعة جديدة",
@@ -220,6 +250,9 @@
     "confirmPassword": {
       "required": "يرجى تأكيد كلمة المرور",
       "mismatch": "كلمتا المرور غير متطابقتين"
+    },
+    "columnSetting": {
+      "nameRequired": "اسم العمود مطلوب"
     },
     "trades": {
       "tickerRequired": "الرمز مطلوب",

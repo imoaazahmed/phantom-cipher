@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import {
   useReactTable,
   getCoreRowModel,
@@ -22,6 +22,7 @@ import {
   arrayMove,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import { EyeOff, Info, Pencil, Plus, Settings2, Trash2, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import {
   Tooltip,
@@ -29,12 +30,30 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Spinner } from '@/components/ui/spinner'
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction,
+} from '@/components/ui/alert-dialog'
 import { cn } from '@/lib/utils'
 import {
   ContextMenu,
   ContextMenuTrigger,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuSeparator,
 } from '@/components/ui/context-menu'
 import {
   Table,
@@ -44,8 +63,10 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import type { EnrichedTrade } from '@/lib/trades/types'
-import { PINNED_COLUMN, DEFAULT_COLUMN_ORDER, resolveColumnOrder } from '@/lib/trades/column-order'
+import type { EnrichedTrade, ColumnSetting } from '@/lib/trades/types'
+import { PINNED_COLUMN, DEFAULT_COLUMN_ORDER, REQUIRED_COLUMNS, resolveColumnOrder } from '@/lib/trades/column-order'
+import { deleteColumnSetting } from '@/lib/trades/actions'
+import { AddColumnDialog, type EditColumnData } from './add-column-dialog'
 
 type Props = {
   trades: EnrichedTrade[]
@@ -55,6 +76,7 @@ type Props = {
   onColumnReorder: (order: string[]) => void
   columnVisibility: Record<string, boolean>
   onHideColumn: (columnId: string) => void
+  columnSettings?: ColumnSetting[]
 }
 
 function fmtCurrency(value: number): string {
@@ -84,15 +106,47 @@ function fmtTime(timeStr: string): string {
 }
 
 function HeaderCell({ label, tooltip }: { label: string; tooltip: string }) {
+  const { t } = useTranslation()
+  const [settingsOpen, setSettingsOpen] = useState(false)
   return (
-    <Tooltip>
-      <TooltipTrigger>
+    <span className="flex w-full items-center justify-between gap-2.5">
+      <span className="flex items-center gap-1.25">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="cursor-default text-muted-foreground hover:text-foreground">
+              <Info className="size-3" />
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="max-w-56 flex-col items-start gap-0.5">
+            <p className="font-semibold">{label}</p>
+            {tooltip
+              ? <p>{tooltip}</p>
+              : <p className="opacity-60 italic">{t('trades.addColumnDialog.noDescriptionHint')}</p>
+            }
+          </TooltipContent>
+        </Tooltip>
         {label}
-      </TooltipTrigger>
-      <TooltipContent side="bottom">
-        {tooltip}
-      </TooltipContent>
-    </Tooltip>
+      </span>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            className="cursor-pointer text-muted-foreground hover:text-foreground"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => setSettingsOpen(true)}
+          >
+            <Settings2 className="size-3" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">{t('trades.columns.columnSettings')}</TooltipContent>
+      </Tooltip>
+      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{label}</DialogTitle>
+          </DialogHeader>
+        </DialogContent>
+      </Dialog>
+    </span>
   )
 }
 
@@ -122,7 +176,7 @@ function DraggableHeader({ id, className, children }: DraggableHeaderProps) {
         transform: CSS.Transform.toString(transform),
         transition,
         opacity: isDragging ? 0.5 : 1,
-        cursor: 'grab',
+        cursor: isDragging ? 'grabbing' : 'grab',
       }}
       className={className}
       {...attributes}
@@ -133,18 +187,36 @@ function DraggableHeader({ id, className, children }: DraggableHeaderProps) {
   )
 }
 
-export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, onColumnReorder, columnVisibility, onHideColumn }: Props) {
+export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, onColumnReorder, columnVisibility, onHideColumn, columnSettings = [] }: Props) {
   const { t } = useTranslation()
 
-  const [columnOrder, setColumnOrder] = useState<string[]>([PINNED_COLUMN, ...resolveColumnOrder(initialColumnOrder, DEFAULT_COLUMN_ORDER)])
+  const customColumns = columnSettings.filter((s) => s.column_id.startsWith('custom_'))
+  const allColumnKeys = [...DEFAULT_COLUMN_ORDER, ...customColumns.map((s) => s.column_id)]
+
+  const [columnOrder, setColumnOrder] = useState<string[]>(() => [PINNED_COLUMN, ...resolveColumnOrder(initialColumnOrder, allColumnKeys)])
+  const [addColumnOpen, setAddColumnOpen] = useState(false)
+  const [editTarget, setEditTarget] = useState<EditColumnData | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
+
+  // When new custom columns arrive (after router.refresh()), append them to the order.
+  const seenColumnIds = useRef(new Set(columnOrder))
+  const displayColumnOrder = useMemo(() => {
+    const newIds = allColumnKeys.filter((id) => !seenColumnIds.current.has(id))
+    if (newIds.length === 0) return columnOrder
+    newIds.forEach((id) => seenColumnIds.current.add(id))
+    const next = [...columnOrder, ...newIds]
+    setColumnOrder(next)
+    return next
+  }, [columnOrder, allColumnKeys])
 
   const sensors = useSensors(useSensor(PointerSensor))
 
-  const columns = useMemo<ColumnDef<EnrichedTrade>[]>(
+  const builtInColumns = useMemo<ColumnDef<EnrichedTrade>[]>(
     () => [
       {
         accessorKey: 'trade_number',
-        header: () => <HeaderCell label={t('trades.columns.number')} tooltip={t('trades.columnTooltips.number')} />,
+        header: () => t('trades.columns.number'),
         cell: ({ getValue }) => (
           <span className="font-medium tabular-nums">{getValue<number>()}</span>
         ),
@@ -322,13 +394,26 @@ export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, 
     [t]
   )
 
+  const columns = useMemo<ColumnDef<EnrichedTrade>[]>(
+    () => [
+      ...builtInColumns,
+      ...customColumns.map<ColumnDef<EnrichedTrade>>((s) => ({
+        id: s.column_id,
+        header: () => <HeaderCell label={s.name} tooltip={s.description ?? ''} />,
+        cell: () => null,
+      })),
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [builtInColumns, customColumns]
+  )
+
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event
     if (!over || active.id === over.id) return
 
-    const oldIndex = columnOrder.indexOf(active.id as string)
-    const newIndex = columnOrder.indexOf(over.id as string)
-    const next = arrayMove(columnOrder, oldIndex, newIndex)
+    const oldIndex = displayColumnOrder.indexOf(active.id as string)
+    const newIndex = displayColumnOrder.indexOf(over.id as string)
+    const next = arrayMove(displayColumnOrder, oldIndex, newIndex)
     setColumnOrder(next)
     onColumnReorder(next.filter((id) => id !== PINNED_COLUMN))
   }
@@ -337,7 +422,7 @@ export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, 
     data: trades,
     columns,
     getCoreRowModel: getCoreRowModel(),
-    state: { columnOrder, columnVisibility },
+    state: { columnOrder: displayColumnOrder, columnVisibility },
     onColumnOrderChange: setColumnOrder,
   })
 
@@ -355,7 +440,7 @@ export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, 
           {table.getHeaderGroups().map((hg) => (
             <TableRow key={hg.id}>
               <SortableContext
-                items={columnOrder.filter((id) => id !== PINNED_COLUMN)}
+                items={displayColumnOrder.filter((id) => id !== PINNED_COLUMN)}
                 strategy={horizontalListSortingStrategy}
               >
                 {hg.headers.map((h) => {
@@ -375,21 +460,62 @@ export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, 
                     )
                   }
                   return (
-                    <DraggableHeader key={h.id} id={h.column.id} className={headClassName}>
-                      <ContextMenu>
-                        <ContextMenuTrigger className="flex w-full items-center justify-center">
-                          {flexRender(h.column.columnDef.header, h.getContext())}
+                    <ContextMenu key={h.id}>
+                      <DraggableHeader id={h.column.id} className={headClassName}>
+                        <ContextMenuTrigger asChild>
+                          <span className="flex w-full items-center">
+                            {flexRender(h.column.columnDef.header, h.getContext())}
+                          </span>
                         </ContextMenuTrigger>
-                        <ContextMenuContent>
-                          <ContextMenuItem onClick={() => onHideColumn(h.column.id)}>
-                            {t('trades.columns.hide')}
+                      </DraggableHeader>
+                      <ContextMenuContent>
+                        <ContextMenuItem
+                          disabled={REQUIRED_COLUMNS.has(h.column.id)}
+                          onClick={() => onHideColumn(h.column.id)}
+                        >
+                          <EyeOff className="size-4" />
+                          {t('trades.columns.hide')}
+                        </ContextMenuItem>
+                        {h.column.id.startsWith('custom_') ? (
+                          <ContextMenuItem
+                            onClick={() => {
+                              const s = customColumns.find((c) => c.column_id === h.column.id)
+                              if (s) setEditTarget({ columnId: s.column_id, name: s.name, description: s.description, format_type: s.format_type })
+                            }}
+                          >
+                            <Pencil className="size-4" />
+                            {t('trades.columns.rename')}
                           </ContextMenuItem>
+                        ) : (
                           <ContextMenuItem disabled>
+                            <Pencil className="size-4" />
+                            {t('trades.columns.rename')}
+                          </ContextMenuItem>
+                        )}
+                        {h.column.id.startsWith('custom_') ? (
+                          <ContextMenuItem
+                            variant="destructive"
+                            onClick={() => {
+                              const setting = customColumns.find((s) => s.column_id === h.column.id)
+                              setDeleteTarget({ id: h.column.id, name: setting?.name ?? h.column.id })
+                            }}
+                          >
+                            <Trash2 className="size-4" />
                             {t('trades.columns.delete')}
                           </ContextMenuItem>
-                        </ContextMenuContent>
-                      </ContextMenu>
-                    </DraggableHeader>
+                        ) : (
+                          <ContextMenuItem disabled variant="destructive">
+                            <Trash2 className="size-4" />
+                            {t('trades.columns.delete')}
+                          </ContextMenuItem>
+                        )}
+                        <ContextMenuSeparator />
+                        <ContextMenuItem onClick={() => setAddColumnOpen(true)}>
+                          <Plus className="size-4" />
+                          {t('trades.columns.addColumn')}
+                        </ContextMenuItem>
+                      </ContextMenuContent>
+                    </ContextMenu>
                   )
                 })}
               </SortableContext>
@@ -434,6 +560,57 @@ export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, 
       </Table>
       </DndContext>
     </div>
+    <AddColumnDialog
+      open={addColumnOpen || !!editTarget}
+      onOpenChange={(open) => {
+        if (!open) { setAddColumnOpen(false); setEditTarget(null) }
+      }}
+      initialData={editTarget ?? undefined}
+    />
+    <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}>
+      <AlertDialogContent>
+        <AlertDialogCancel size="icon-sm" variant="ghost" className="absolute inset-e-3 top-3">
+          <X className="size-4" />
+        </AlertDialogCancel>
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            {t('trades.deleteColumnDialog.title', { name: deleteTarget?.name ?? '' })}
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            {t('trades.deleteColumnDialog.description')}
+          </AlertDialogDescription>
+          <p className="text-sm text-muted-foreground">
+            {t('trades.deleteColumnDialog.hint')}
+          </p>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={isDeleting}>
+            {t('trades.cancel')}
+          </AlertDialogCancel>
+          <AlertDialogCancel disabled={isDeleting} onClick={() => {
+            if (deleteTarget) onHideColumn(deleteTarget.id)
+            setDeleteTarget(null)
+          }}>
+            {t('trades.deleteColumnDialog.hide')}
+          </AlertDialogCancel>
+          <AlertDialogAction
+            variant="destructive"
+            disabled={isDeleting}
+            onClick={async (e) => {
+              e.preventDefault()
+              if (!deleteTarget) return
+              setIsDeleting(true)
+              await deleteColumnSetting(deleteTarget.id)
+              setIsDeleting(false)
+              setDeleteTarget(null)
+            }}
+          >
+            <Spinner data-icon="inline-start" className={isDeleting ? '' : 'hidden'} />
+            {t('trades.deleteColumnDialog.confirm')}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
     </TooltipProvider>
   )
 }
