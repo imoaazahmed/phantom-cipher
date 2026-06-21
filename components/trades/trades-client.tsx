@@ -10,6 +10,7 @@ import { ScrollArea as ScrollAreaPrimitive } from "radix-ui"
 import { ScrollBar } from "@/components/ui/scroll-area"
 import { PatchTabs, type PatchTabsHandle } from "./patch-tabs"
 import { TradesTable } from "./trades-table"
+import { ColumnsDialog } from "./columns-dialog"
 import {
   Empty,
   EmptyHeader,
@@ -33,6 +34,7 @@ type Props = {
 }
 
 const LAST_PATCH_KEY = "trading-logs:last-patch"
+const COLUMN_VISIBILITY_KEY = "trading-logs:column-visibility"
 
 function fallbackPatch(list: Patch[], removedId: string): string {
   const removedIndex = list.findIndex((p) => p.id === removedId)
@@ -67,6 +69,16 @@ export function TradesClient({ patches: initialPatches }: Props) {
   const [scrolledY, setScrolledY] = useState(false)
   const [tradeCache, setTradeCache] = useState<Map<string, RawTrade[]>>(new Map())
   const [loadingTrades, setLoadingTrades] = useState(false)
+  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(() => {
+    try {
+      const raw = localStorage.getItem(COLUMN_VISIBILITY_KEY)
+      if (!raw) return {}
+      const parsed = JSON.parse(raw)
+      return typeof parsed === 'object' && parsed !== null ? parsed : {}
+    } catch {
+      return {}
+    }
+  })
 
   // URL param (patchId) takes priority; then localStorage (localPatchId); then last visible.
   const activePatchId =
@@ -191,6 +203,18 @@ export function TradesClient({ patches: initialPatches }: Props) {
     }
   }
 
+  function handleVisibilityChange(columnId: string, visible: boolean) {
+    setColumnVisibility((prev) => {
+      const next = { ...prev, [columnId]: visible }
+      localStorage.setItem(COLUMN_VISIBILITY_KEY, JSON.stringify(next))
+      return next
+    })
+  }
+
+  function handleHideColumn(columnId: string) {
+    handleVisibilityChange(columnId, false)
+  }
+
   async function handleColumnReorder(order: string[]) {
     const id = activePatchId
     if (!id) return
@@ -219,8 +243,12 @@ export function TradesClient({ patches: initialPatches }: Props) {
   return (
     <div className="flex h-full flex-col">
       {activePatch && !noPatches && !allHidden && (
-        <div className="px-4 py-3">
+        <div className="flex items-center justify-between px-4 py-1.5">
           <h1 className="text-sm font-semibold">{activePatch.name}</h1>
+          <ColumnsDialog
+            columnVisibility={columnVisibility}
+            onVisibilityChange={handleVisibilityChange}
+          />
         </div>
       )}
 
@@ -261,7 +289,16 @@ export function TradesClient({ patches: initialPatches }: Props) {
                 <Spinner />
               </div>
             ) : (
-              <TradesTable key={activePatchId} trades={enriched} scrolledX={scrolledX} scrolledY={scrolledY} initialColumnOrder={activePatch?.column_order ?? null} onColumnReorder={handleColumnReorder} columnVisibility={{}} onHideColumn={() => {}} />
+              <TradesTable
+                key={activePatchId}
+                trades={enriched}
+                scrolledX={scrolledX}
+                scrolledY={scrolledY}
+                initialColumnOrder={activePatch?.column_order ?? null}
+                onColumnReorder={handleColumnReorder}
+                columnVisibility={columnVisibility}
+                onHideColumn={handleHideColumn}
+              />
             )}
           </ScrollAreaPrimitive.Viewport>
           <ScrollBar orientation="vertical" />
