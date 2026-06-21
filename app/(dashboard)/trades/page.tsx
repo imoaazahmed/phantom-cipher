@@ -25,6 +25,14 @@ export default async function TradesPage() {
 
   const patches: Patch[] = (rows ?? []) as Patch[]
   const columnSettings: ColumnSetting[] = (settingsRows ?? []) as ColumnSetting[]
+  // All patches carry the same column_visibility — read from the first one.
+  const savedColumnVisibility = (patches[0]?.column_visibility ?? null) as Record<string, boolean> | null
 
-  return <TradesClient patches={patches} columnSettings={columnSettings} />
+  return (
+    <TradesClient
+      patches={patches}
+      columnSettings={columnSettings}
+      savedColumnVisibility={savedColumnVisibility}
+    />
+  )
 }

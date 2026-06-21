@@ -287,6 +287,22 @@ export async function updateColumnSetting(
   return { error: null }
 }
 
+export async function saveColumnVisibility(
+  visibility: Record<string, boolean>
+): Promise<{ error: string | null }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'errors.unauthorized' }
+
+  const { error } = await supabase
+    .from('patches')
+    .update({ column_visibility: visibility })
+    .eq('user_id', user.id)
+
+  if (error) return { error: 'errors.generic' }
+  return { error: null }
+}
+
 export async function deleteColumnSetting(columnId: string): Promise<{ error: string | null }> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

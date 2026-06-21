@@ -27,16 +27,17 @@ import {
   deletePatch,
   duplicatePatch,
   getPatchTrades,
+  saveColumnVisibility,
 } from "@/lib/trades/actions"
 import type { Patch, RawTrade, ColumnSetting } from "@/lib/trades/types"
 
 type Props = {
   patches: Patch[]
   columnSettings: ColumnSetting[]
+  savedColumnVisibility: Record<string, boolean> | null
 }
 
 const LAST_PATCH_KEY = "trading-logs:last-patch"
-const COLUMN_VISIBILITY_KEY = "trading-logs:column-visibility"
 
 function fallbackPatch(list: Patch[], removedId: string): string {
   const removedIndex = list.findIndex((p) => p.id === removedId)
@@ -46,7 +47,7 @@ function fallbackPatch(list: Patch[], removedId: string): string {
   return list.find((p) => p.id !== removedId && !p.is_hidden)?.id ?? ""
 }
 
-export function TradesClient({ patches: initialPatches, columnSettings }: Props) {
+export function TradesClient({ patches: initialPatches, columnSettings, savedColumnVisibility }: Props) {
   const { t } = useTranslation()
   const [patches, setPatches] = useState<Patch[]>(initialPatches)
   const [patchId, setPatchId] = useQueryState("patch", { defaultValue: "" })
@@ -71,16 +72,11 @@ export function TradesClient({ patches: initialPatches, columnSettings }: Props)
   const [scrolledY, setScrolledY] = useState(false)
   const [tradeCache, setTradeCache] = useState<Map<string, RawTrade[]>>(new Map())
   const [loadingTrades, setLoadingTrades] = useState(false)
-  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(() => {
-    try {
-      const raw = localStorage.getItem(COLUMN_VISIBILITY_KEY)
-      if (!raw) return {}
-      const parsed = JSON.parse(raw)
-      return typeof parsed === 'object' && parsed !== null ? parsed : {}
-    } catch {
-      return {}
-    }
-  })
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(
+    savedColumnVisibility ?? {}
+  )
 
   // URL param (patchId) takes priority; then localStorage (localPatchId); then last visible.
   const activePatchId =
@@ -205,10 +201,15 @@ export function TradesClient({ patches: initialPatches, columnSettings }: Props)
     }
   }
 
+  function persistVisibility(next: Record<string, boolean>) {
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(() => saveColumnVisibility(next), 800)
+  }
+
   function handleVisibilityChange(columnId: string, visible: boolean) {
     setColumnVisibility((prev) => {
       const next = { ...prev, [columnId]: visible }
-      localStorage.setItem(COLUMN_VISIBILITY_KEY, JSON.stringify(next))
+      persistVisibility(next)
       return next
     })
   }
@@ -221,7 +222,7 @@ export function TradesClient({ patches: initialPatches, columnSettings }: Props)
     const next: Record<string, boolean> = {}
     DEFAULT_COLUMN_ORDER.forEach((id) => { next[id] = true })
     setColumnVisibility(next)
-    localStorage.setItem(COLUMN_VISIBILITY_KEY, JSON.stringify(next))
+    persistVisibility(next)
   }
 
   async function handleColumnReorder(order: string[]) {

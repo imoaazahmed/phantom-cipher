@@ -168,3 +168,16 @@ create index column_settings_user_id_idx on public.column_settings (user_id);
 
 Custom columns have a `column_id` prefixed with `custom_` (e.g. `custom_<uuid>`).
 Built-in column overrides use the column's `accessorKey` as `column_id` (e.g. `avg_entry`).
+
+---
+
+## 2026-06-21 — Add column_visibility to patches
+
+Same pattern as `column_order`. When updated, all patches for the user are written at once so visibility stays global. A future flag can make it per-patch without any schema change.
+
+```sql
+alter table public.patches
+  add column if not exists column_visibility jsonb null;
+```
+
+`null` means all columns visible (default). Value is a `Record<string, boolean>` — `false` means hidden, `true` or absent means visible.

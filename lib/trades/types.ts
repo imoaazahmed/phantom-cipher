@@ -8,6 +8,7 @@ export type Patch = {
   is_hidden: boolean
   sort_order: number
   column_order: string[] | null
+  column_visibility: Record<string, boolean> | null
   created_at: string
 }
 
