@@ -400,7 +400,7 @@ export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, 
           {table.getRowModel().rows.length === 0 ? (
             Array.from({ length: 5 }).map((_, i) => (
               <TableRow key={i}>
-                {table.getAllLeafColumns().map((col) => {
+                {table.getVisibleLeafColumns().map((col) => {
                   const isPinned = col.id === PINNED_COLUMN
                   return (
                     <TableCell
