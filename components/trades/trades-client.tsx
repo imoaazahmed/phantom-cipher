@@ -261,7 +261,7 @@ export function TradesClient({ patches: initialPatches }: Props) {
                 <Spinner />
               </div>
             ) : (
-              <TradesTable key={activePatchId} trades={enriched} scrolledX={scrolledX} scrolledY={scrolledY} initialColumnOrder={activePatch?.column_order ?? null} onColumnReorder={handleColumnReorder} />
+              <TradesTable key={activePatchId} trades={enriched} scrolledX={scrolledX} scrolledY={scrolledY} initialColumnOrder={activePatch?.column_order ?? null} onColumnReorder={handleColumnReorder} columnVisibility={{}} onHideColumn={() => {}} />
             )}
           </ScrollAreaPrimitive.Viewport>
           <ScrollBar orientation="vertical" />

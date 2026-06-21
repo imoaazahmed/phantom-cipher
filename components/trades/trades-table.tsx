@@ -31,6 +31,12 @@ import {
 } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+} from '@/components/ui/context-menu'
+import {
   Table,
   TableBody,
   TableCell,
@@ -47,6 +53,8 @@ type Props = {
   scrolledY?: boolean
   initialColumnOrder: string[] | null
   onColumnReorder: (order: string[]) => void
+  columnVisibility: Record<string, boolean>
+  onHideColumn: (columnId: string) => void
 }
 
 function fmtCurrency(value: number): string {
@@ -125,7 +133,7 @@ function DraggableHeader({ id, className, children }: DraggableHeaderProps) {
   )
 }
 
-export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, onColumnReorder }: Props) {
+export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, onColumnReorder, columnVisibility, onHideColumn }: Props) {
   const { t } = useTranslation()
 
   const [columnOrder, setColumnOrder] = useState<string[]>([PINNED_COLUMN, ...resolveColumnOrder(initialColumnOrder, DEFAULT_COLUMN_ORDER)])
@@ -329,7 +337,7 @@ export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, 
     data: trades,
     columns,
     getCoreRowModel: getCoreRowModel(),
-    state: { columnOrder },
+    state: { columnOrder, columnVisibility },
     onColumnOrderChange: setColumnOrder,
   })
 
@@ -368,7 +376,19 @@ export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, 
                   }
                   return (
                     <DraggableHeader key={h.id} id={h.column.id} className={headClassName}>
-                      {flexRender(h.column.columnDef.header, h.getContext())}
+                      <ContextMenu>
+                        <ContextMenuTrigger className="flex w-full items-center justify-center">
+                          {flexRender(h.column.columnDef.header, h.getContext())}
+                        </ContextMenuTrigger>
+                        <ContextMenuContent>
+                          <ContextMenuItem onClick={() => onHideColumn(h.column.id)}>
+                            {t('trades.columns.hide')}
+                          </ContextMenuItem>
+                          <ContextMenuItem disabled>
+                            {t('trades.columns.delete')}
+                          </ContextMenuItem>
+                        </ContextMenuContent>
+                      </ContextMenu>
                     </DraggableHeader>
                   )
                 })}
