@@ -115,7 +115,8 @@
       "actions": "إجراءات",
       "hide": "إخفاء",
       "delete": "حذف",
-      "manageColumns": "إدارة الأعمدة"
+      "manageColumns": "إدارة الأعمدة",
+      "showAll": "إظهار الكل"
     },
     "columnTooltips": {
       "number": "رقم الصفقة",

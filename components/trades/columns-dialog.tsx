@@ -17,9 +17,10 @@ import { DEFAULT_COLUMN_ORDER, COLUMN_LABELS } from '@/lib/trades/column-order'
 type ColumnsDialogProps = {
   columnVisibility: Record<string, boolean>
   onVisibilityChange: (columnId: string, visible: boolean) => void
+  onShowAll: () => void
 }
 
-export function ColumnsDialog({ columnVisibility, onVisibilityChange }: ColumnsDialogProps) {
+export function ColumnsDialog({ columnVisibility, onVisibilityChange, onShowAll }: ColumnsDialogProps) {
   const { t } = useTranslation()
 
   return (
@@ -50,6 +51,9 @@ export function ColumnsDialog({ columnVisibility, onVisibilityChange }: ColumnsD
             )
           })}
         </div>
+        <Button variant="outline" className="w-full" onClick={onShowAll}>
+          {t('trades.columns.showAll')}
+        </Button>
       </DialogContent>
     </Dialog>
   )

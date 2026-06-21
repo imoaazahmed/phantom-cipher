@@ -20,6 +20,7 @@ import {
   EmptyContent,
 } from "@/components/ui/empty"
 import { enrichTrades } from "@/lib/trades/calculations"
+import { DEFAULT_COLUMN_ORDER } from "@/lib/trades/column-order"
 import {
   createPatch,
   updatePatch,
@@ -215,6 +216,13 @@ export function TradesClient({ patches: initialPatches }: Props) {
     handleVisibilityChange(columnId, false)
   }
 
+  function handleShowAll() {
+    const next: Record<string, boolean> = {}
+    DEFAULT_COLUMN_ORDER.forEach((id) => { next[id] = true })
+    setColumnVisibility(next)
+    localStorage.setItem(COLUMN_VISIBILITY_KEY, JSON.stringify(next))
+  }
+
   async function handleColumnReorder(order: string[]) {
     const id = activePatchId
     if (!id) return
@@ -248,6 +256,7 @@ export function TradesClient({ patches: initialPatches }: Props) {
           <ColumnsDialog
             columnVisibility={columnVisibility}
             onVisibilityChange={handleVisibilityChange}
+            onShowAll={handleShowAll}
           />
         </div>
       )}

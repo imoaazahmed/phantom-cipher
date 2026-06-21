@@ -115,7 +115,8 @@
       "actions": "Actions",
       "hide": "Hide",
       "delete": "Delete",
-      "manageColumns": "Manage Columns"
+      "manageColumns": "Manage Columns",
+      "showAll": "Show All"
     },
     "columnTooltips": {
       "number": "Trade number",
