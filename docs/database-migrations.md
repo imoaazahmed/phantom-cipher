@@ -123,3 +123,15 @@ alter table public.patches rename column max_trades to patch_limit;
 ```sql
 alter table public.trades rename column coin to ticker;
 ```
+
+---
+
+## 2026-06-21 — Add column_order to patches
+
+```sql
+alter table public.patches
+  add column if not exists column_order jsonb null;
+```
+
+`null` means default column order. Value is an ordered array of column key
+strings (accessorKey values), excluding the always-pinned `trade_number` column.

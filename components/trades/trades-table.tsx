@@ -1,12 +1,27 @@
 "use client"
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import {
   useReactTable,
   getCoreRowModel,
   flexRender,
   type ColumnDef,
 } from '@tanstack/react-table'
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  horizontalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { useTranslation } from 'react-i18next'
 import {
   Tooltip,
@@ -14,6 +29,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { cn } from '@/lib/utils'
 import {
   Table,
   TableBody,
@@ -23,9 +39,14 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import type { EnrichedTrade } from '@/lib/trades/types'
+import { PINNED_COLUMN, DEFAULT_COLUMN_ORDER, resolveColumnOrder } from '@/lib/trades/column-order'
 
 type Props = {
   trades: EnrichedTrade[]
+  scrolledX?: boolean
+  scrolledY?: boolean
+  initialColumnOrder: string[] | null
+  onColumnReorder: (order: string[]) => void
 }
 
 function fmtCurrency(value: number): string {
@@ -67,8 +88,49 @@ function HeaderCell({ label, tooltip }: { label: string; tooltip: string }) {
   )
 }
 
-export function TradesTable({ trades }: Props) {
+const colShadow = "before:pointer-events-none before:absolute before:inset-y-0 before:start-full before:w-4 before:bg-[linear-gradient(to_right,rgb(0_0_0/0.07),transparent)] rtl:before:bg-[linear-gradient(to_left,rgb(0_0_0/0.07),transparent)] dark:before:bg-[linear-gradient(to_right,rgb(255_255_255/0.1),transparent)] dark:rtl:before:bg-[linear-gradient(to_left,rgb(255_255_255/0.1),transparent)]"
+const rowShadow = "after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-4 after:bg-[linear-gradient(to_bottom,rgb(0_0_0/0.07),transparent)] dark:after:bg-[linear-gradient(to_bottom,rgb(255_255_255/0.1),transparent)]"
+
+type DraggableHeaderProps = {
+  id: string
+  className?: string
+  children: React.ReactNode
+}
+
+function DraggableHeader({ id, className, children }: DraggableHeaderProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id })
+
+  return (
+    <TableHead
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.5 : 1,
+        cursor: 'grab',
+      }}
+      className={className}
+      {...attributes}
+      {...listeners}
+    >
+      {children}
+    </TableHead>
+  )
+}
+
+export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, onColumnReorder }: Props) {
   const { t } = useTranslation()
+
+  const [columnOrder, setColumnOrder] = useState<string[]>([PINNED_COLUMN, ...resolveColumnOrder(initialColumnOrder, DEFAULT_COLUMN_ORDER)])
+
+  const sensors = useSensors(useSensor(PointerSensor))
 
   const columns = useMemo<ColumnDef<EnrichedTrade>[]>(
     () => [
@@ -252,24 +314,65 @@ export function TradesTable({ trades }: Props) {
     [t]
   )
 
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+
+    const oldIndex = columnOrder.indexOf(active.id as string)
+    const newIndex = columnOrder.indexOf(over.id as string)
+    const next = arrayMove(columnOrder, oldIndex, newIndex)
+    setColumnOrder(next)
+    onColumnReorder(next.filter((id) => id !== PINNED_COLUMN))
+  }
+
   const table = useReactTable({
     data: trades,
     columns,
     getCoreRowModel: getCoreRowModel(),
+    state: { columnOrder },
+    onColumnOrderChange: setColumnOrder,
   })
 
   return (
     <TooltipProvider>
-    <div className="bg-background overflow-auto">
-      <Table>
+    <div className="bg-background">
+      <DndContext
+        id="trades-table-dnd"
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+      >
+      <Table containerClassName="overflow-visible">
         <TableHeader>
           {table.getHeaderGroups().map((hg) => (
             <TableRow key={hg.id}>
-              {hg.headers.map((h) => (
-                <TableHead key={h.id} className="whitespace-nowrap">
-                  {flexRender(h.column.columnDef.header, h.getContext())}
-                </TableHead>
-              ))}
+              <SortableContext
+                items={columnOrder.filter((id) => id !== PINNED_COLUMN)}
+                strategy={horizontalListSortingStrategy}
+              >
+                {hg.headers.map((h) => {
+                  const isPinned = h.column.id === PINNED_COLUMN
+                  const headClassName = cn(
+                    'sticky top-0 z-10 bg-background',
+                    scrolledY && rowShadow,
+                    isPinned && 'inset-s-0 z-20 w-12.5 min-w-12.5',
+                    !isPinned && 'min-w-20',
+                    isPinned && scrolledX && colShadow,
+                  )
+                  if (isPinned) {
+                    return (
+                      <TableHead key={h.id} className={headClassName}>
+                        {flexRender(h.column.columnDef.header, h.getContext())}
+                      </TableHead>
+                    )
+                  }
+                  return (
+                    <DraggableHeader key={h.id} id={h.column.id} className={headClassName}>
+                      {flexRender(h.column.columnDef.header, h.getContext())}
+                    </DraggableHeader>
+                  )
+                })}
+              </SortableContext>
             </TableRow>
           ))}
         </TableHeader>
@@ -277,26 +380,39 @@ export function TradesTable({ trades }: Props) {
           {table.getRowModel().rows.length === 0 ? (
             Array.from({ length: 5 }).map((_, i) => (
               <TableRow key={i}>
-                {columns.map((col) => (
-                  <TableCell key={'id' in col ? col.id : col.accessorKey as string} className="whitespace-nowrap">
-                    &nbsp;
-                  </TableCell>
-                ))}
+                {table.getAllLeafColumns().map((col) => {
+                  const isPinned = col.id === PINNED_COLUMN
+                  return (
+                    <TableCell
+                      key={col.id}
+                      className={cn(isPinned && cn('sticky inset-s-0 z-10 w-12.5 min-w-12.5 bg-background', scrolledX && colShadow))}
+                    >
+                      &nbsp;
+                    </TableCell>
+                  )
+                })}
               </TableRow>
             ))
           ) : (
             table.getRowModel().rows.map((row) => (
               <TableRow key={row.id}>
-                {row.getVisibleCells().map((cell) => (
-                  <TableCell key={cell.id} className="whitespace-nowrap">
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </TableCell>
-                ))}
+                {row.getVisibleCells().map((cell) => {
+                  const isPinned = cell.column.id === PINNED_COLUMN
+                  return (
+                    <TableCell
+                      key={cell.id}
+                      className={cn(isPinned && cn('sticky inset-s-0 z-10 w-12.5 min-w-12.5 bg-background', scrolledX && colShadow))}
+                    >
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </TableCell>
+                  )
+                })}
               </TableRow>
             ))
           )}
         </TableBody>
       </Table>
+      </DndContext>
     </div>
     </TooltipProvider>
   )

@@ -41,7 +41,7 @@ export async function createPatch(
 
 export async function updatePatch(
   patchId: string,
-  updates: Partial<{ name: string; patch_limit: number; is_hidden: boolean; sort_order: number }>
+  updates: Partial<{ name: string; patch_limit: number; is_hidden: boolean; sort_order: number; column_order: string[] | null }>
 ): Promise<{ error: string | null }> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -90,6 +90,7 @@ export async function duplicatePatch(
       patch_number: nextNumber,
       name: `Copy of ${source.name}`,
       patch_limit: source.patch_limit,
+      column_order: source.column_order ?? null,
       sort_order: nextNumber,
     })
     .select()

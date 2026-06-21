@@ -7,6 +7,7 @@ export type Patch = {
   patch_limit: number
   is_hidden: boolean
   sort_order: number
+  column_order: string[] | null
   created_at: string
 }
 

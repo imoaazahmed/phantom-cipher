@@ -63,6 +63,8 @@ export function TradesClient({ patches: initialPatches }: Props) {
   const patchTabsRef = useRef<PatchTabsHandle>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
   const scrollMemory = useRef<Map<string, { left: number; top: number }>>(new Map())
+  const [scrolledX, setScrolledX] = useState(false)
+  const [scrolledY, setScrolledY] = useState(false)
   const [tradeCache, setTradeCache] = useState<Map<string, RawTrade[]>>(new Map())
   const [loadingTrades, setLoadingTrades] = useState(false)
 
@@ -116,8 +118,16 @@ export function TradesClient({ patches: initialPatches }: Props) {
       if (!vp) return
       vp.scrollLeft = saved?.left ?? 0
       vp.scrollTop = saved?.top ?? 0
+      setScrolledX(Math.abs(vp.scrollLeft) > 0)
+      setScrolledY(vp.scrollTop > 0)
     })
   }, [activePatchId])
+
+  function handleViewportScroll(e: React.UIEvent<HTMLDivElement>) {
+    const el = e.currentTarget
+    setScrolledX(Math.abs(el.scrollLeft) > 0)
+    setScrolledY(el.scrollTop > 0)
+  }
 
   // Patch handlers
   async function handleNewPatch(name: string, patchLimit: number) {
@@ -181,6 +191,15 @@ export function TradesClient({ patches: initialPatches }: Props) {
     }
   }
 
+  async function handleColumnReorder(order: string[]) {
+    const id = activePatchId
+    if (!id) return
+    setPatches((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, column_order: order } : p))
+    )
+    await updatePatch(id, { column_order: order })
+  }
+
   async function handleReorder(orderedIds: string[]) {
     setPatches((prev) => {
       const map = new Map(prev.map((p) => [p.id, p]))
@@ -236,13 +255,13 @@ export function TradesClient({ patches: initialPatches }: Props) {
         </div>
       ) : (
         <ScrollAreaPrimitive.Root className="relative flex-1 overflow-hidden">
-          <ScrollAreaPrimitive.Viewport ref={viewportRef} className="size-full rounded-[inherit]">
+          <ScrollAreaPrimitive.Viewport ref={viewportRef} className="size-full rounded-[inherit]" onScroll={handleViewportScroll}>
             {loadingTrades ? (
               <div className="flex h-48 items-center justify-center gap-2 text-muted-foreground">
                 <Spinner />
               </div>
             ) : (
-              <TradesTable trades={enriched} />
+              <TradesTable key={activePatchId} trades={enriched} scrolledX={scrolledX} scrolledY={scrolledY} initialColumnOrder={activePatch?.column_order ?? null} onColumnReorder={handleColumnReorder} />
             )}
           </ScrollAreaPrimitive.Viewport>
           <ScrollBar orientation="vertical" />

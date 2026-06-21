@@ -71,6 +71,7 @@ create table public.patches (
   patch_limit int not null default 100,
   is_hidden boolean not null default false,
   sort_order int not null default 0,
+  column_order jsonb null,
   created_at timestamptz default now() not null,
   unique (user_id, patch_number)
 );
