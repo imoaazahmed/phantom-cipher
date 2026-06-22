@@ -224,6 +224,7 @@
     },
     "cell": {
       "readOnly": "This cell is auto-generated and cannot be edited",
+      "invalidNumber": "Please enter a valid number",
       "yesterday": "Yesterday",
       "today": "Today",
       "tomorrow": "Tomorrow",

@@ -65,7 +65,7 @@ export default async function RootLayout({
                 messages={messages[locale]}
               >
                 {children}
-                <Toaster position="bottom-center" />
+                <Toaster position="top-center" closeButton />
               </I18nProvider>
             </TooltipProvider>
           </ThemeProvider>

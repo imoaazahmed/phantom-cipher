@@ -349,6 +349,28 @@ export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, 
     return MENU_COLUMN_IDS.has(columnId) || (columnOptions[columnId]?.length ?? 0) > 0
   }
 
+  function resolveFormatType(columnId: string): FormatType {
+    const saved = columnSettings.find((s) => s.column_id === columnId)
+    return (saved?.format_type as FormatType) ?? BUILT_IN_FORMAT_TYPES[columnId] ?? 'auto'
+  }
+
+  function validateAndCommit(value?: string) {
+    const columnId = editingCell?.columnId
+    if (!columnId) return
+    const fmt = resolveFormatType(columnId)
+    const raw = value ?? editValue
+    if ((fmt === 'number' || fmt === 'currency') && raw.trim() !== '') {
+      const num = Number(raw.replace(/,/g, ''))
+      if (isNaN(num)) {
+        toast.error(t('trades.cell.invalidNumber'))
+        setEditValue('')
+        setEditingCell(null)
+        return
+      }
+    }
+    commitEdit(value)
+  }
+
   const handleOpenColumnSettings = useCallback((columnId: string, label: string, description: string) => {
     const isCustom = columnId.startsWith('custom_')
     const existing = columnSettings.find((s) => s.column_id === columnId)
@@ -717,9 +739,9 @@ export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, 
                         type={cell.column.id === 'trade_time' ? 'time' : 'text'}
                         value={editValue}
                         onChange={(e) => setEditValue(e.target.value)}
-                        onBlur={() => commitEdit()}
+                        onBlur={() => validateAndCommit()}
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter') commitEdit()
+                          if (e.key === 'Enter') validateAndCommit()
                           if (e.key === 'Escape') cancelEdit()
                         }}
                         size={1}
@@ -762,9 +784,9 @@ export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, 
                         type={col.id === 'trade_time' ? 'time' : 'text'}
                         value={editValue}
                         onChange={(e) => setEditValue(e.target.value)}
-                        onBlur={() => commitEdit()}
+                        onBlur={() => validateAndCommit()}
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter') commitEdit()
+                          if (e.key === 'Enter') validateAndCommit()
                           if (e.key === 'Escape') cancelEdit()
                         }}
                         size={1}

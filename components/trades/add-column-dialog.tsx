@@ -94,15 +94,22 @@ function SortableOptionRow({
   onLabelChange,
   onDelete,
   isLocked = false,
+  shouldFocus = false,
 }: {
   opt: OptionRow
   onLabelChange: (id: string, label: string) => void
   onDelete: (id: string) => void
   isLocked?: boolean
+  shouldFocus?: boolean
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: opt.id,
   })
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (shouldFocus) inputRef.current?.focus()
+  }, [shouldFocus])
 
   return (
     <div
@@ -119,6 +126,7 @@ function SortableOptionRow({
         <GripVertical className="size-4" />
       </button>
       <Input
+        ref={inputRef}
         value={opt.label}
         onChange={(e) => onLabelChange(opt.id, e.target.value)}
         className="flex-1"
@@ -152,6 +160,7 @@ export function AddColumnDialog({
   const isCellTypeLocked = isBuiltIn && initialData.columnId !== FLEXIBLE_BUILT_IN
 
   const [optionRows, setOptionRows] = useState<OptionRow[]>([])
+  const [newRowId, setNewRowId] = useState<string | null>(null)
   const prevFormatRef = useRef<string>('')
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
 
@@ -230,7 +239,9 @@ export function AddColumnDialog({
   }
 
   function addOptionRow() {
-    setOptionRows((prev) => [...prev, { id: crypto.randomUUID(), value: '', label: '' }])
+    const id = crypto.randomUUID()
+    setNewRowId(id)
+    setOptionRows((prev) => [...prev, { id, value: '', label: '' }])
   }
 
   function updateOptionLabel(id: string, label: string) {
@@ -403,6 +414,7 @@ export function AddColumnDialog({
                         onLabelChange={updateOptionLabel}
                         onDelete={deleteOptionRow}
                         isLocked={isLockedItems}
+                        shouldFocus={row.id === newRowId}
                       />
                     ))}
                   </div>
@@ -471,7 +483,7 @@ export function AddColumnDialog({
             <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
               {t('trades.cancel')}
             </Button>
-            <Button type="submit" disabled={isSubmitting}>
+            <Button type="submit" disabled={isSubmitting || (isBuiltIn && isCellTypeLocked && !showOptions)}>
               <Spinner data-icon="inline-start" className={isSubmitting ? '' : 'hidden'} />
               {t(isEditing ? 'trades.addColumnDialog.saveEdit' : 'trades.addColumnDialog.save')}
             </Button>
