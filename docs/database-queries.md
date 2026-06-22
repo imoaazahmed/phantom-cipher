@@ -115,8 +115,13 @@ create table public.trades (
   stop_loss numeric(20, 8) not null,
   avg_exit numeric(20, 8) not null,
   risk numeric(12, 2) not null,
+  realised_win numeric(12, 2) null,
+  realised_loss numeric(12, 2) null,
   rules_followed boolean not null,
   setup_type text not null,
+  is_draft boolean not null default false,
+  draft_fields jsonb null,
+  custom_data jsonb null,
   created_at timestamptz default now() not null,
   updated_at timestamptz default now() not null,
   unique (patch_id, trade_number)
@@ -154,7 +159,7 @@ create table public.column_settings (
   name text not null,
   description text,
   format_type text not null default 'auto'
-    check (format_type in ('auto', 'text', 'currency', 'number', 'percent', 'date', 'time')),
+    check (format_type in ('auto', 'text', 'currency', 'number', 'percent', 'date', 'time', 'time24', 'dropdown')),
   created_at timestamptz default now() not null,
   updated_at timestamptz default now() not null,
   unique (user_id, column_id)

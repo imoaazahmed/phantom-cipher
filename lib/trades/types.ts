@@ -27,6 +27,8 @@ export type RawTrade = {
   risk: number
   rules_followed: boolean
   setup_type: string
+  realised_win: number | null
+  realised_loss: number | null
   is_draft?: boolean
   draft_fields?: string[]
   custom_data?: Record<string, string>
@@ -35,14 +37,12 @@ export type RawTrade = {
 }
 
 export type EnrichedTrade = RawTrade & {
-  r_multiple: number
-  pnl: number
-  realised_win: number | null
-  realised_loss: number | null
-  deviation: number | null      // null for winning trades
+  r_multiple: number | null
+  pnl: number | null
+  deviation: number | null      // null when loss did not exceed planned risk (or trade was a win)
   risk_volatility: number | null // null for first trade in patch
-  cumulative_pnl: number
-  cumulative_r: number
+  cumulative_pnl: number | null
+  cumulative_r: number | null
 }
 
 export type TradeFormData = {
@@ -57,6 +57,8 @@ export type TradeFormData = {
   risk: number
   rules_followed: boolean
   setup_type: string
+  realised_win?: number | null
+  realised_loss?: number | null
   draft_fields?: string[]
   custom_data?: Record<string, string>
 }

@@ -24,7 +24,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { format, addDays, subDays } from 'date-fns'
 import { toast } from 'sonner'
-import { Copy, EyeOff, Info, Pencil, Plus, Settings2, Trash2, X } from 'lucide-react'
+import { Copy, EyeOff, Info, Pencil, Plus, Settings2, SquareFunction, Trash2, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import {
   Tooltip,
@@ -169,10 +169,11 @@ function HeaderCell({
 const EDITABLE_COLUMNS = new Set([
   'trade_date', 'trade_time', 'ticker', 'order_type',
   'avg_entry', 'stop_loss', 'avg_exit', 'risk', 'rules_followed', 'setup_type',
+  'realised_win', 'realised_loss',
 ])
 
 const AUTO_GENERATED_COLS = new Set([
-  'direction', 'r_multiple', 'realised_win', 'realised_loss',
+  'direction', 'r_multiple',
   'deviation', 'risk_volatility', 'cumulative_pnl', 'cumulative_r',
 ])
 
@@ -361,7 +362,7 @@ export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, 
       const draftVal = columnId.startsWith('custom_')
         ? draft?.fields.custom_data?.[columnId]
         : draft?.fields[columnId as keyof RawTrade]
-      setEditValue(draftVal !== undefined ? String(draftVal) : '')
+      setEditValue(draftVal != null ? String(draftVal) : '')
     } else {
       setEditValue(String(currentValue ?? ''))
     }
@@ -400,6 +401,10 @@ export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, 
   function parseFieldForSave(columnId: string, raw: string): Partial<TradeFormData> {
     if (['avg_entry', 'stop_loss', 'avg_exit', 'risk'].includes(columnId)) {
       return { [columnId]: parseFloat(raw) || 0 } as Partial<TradeFormData>
+    }
+    if (['realised_win', 'realised_loss'].includes(columnId)) {
+      const n = parseFloat(raw)
+      return { [columnId]: isNaN(n) ? null : n } as Partial<TradeFormData>
     }
     if (columnId === 'rules_followed') return { rules_followed: raw === 'true' }
     return { [columnId]: raw } as Partial<TradeFormData>
@@ -444,24 +449,49 @@ export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, 
       return
     }
 
+    const isEmpty = !value.trim()
     const fields = parseFieldForSave(columnId, value)
+    const isRequiredNumeric = ['avg_entry', 'stop_loss', 'avg_exit', 'risk'].includes(columnId)
+    const isOptionalNumeric = ['realised_win', 'realised_loss'].includes(columnId)
+    const isNumericColumn = isRequiredNumeric || isOptionalNumeric
+    const counterpart = columnId === 'realised_win' ? 'realised_loss' : columnId === 'realised_loss' ? 'realised_win' : null
 
     if (rowId.startsWith('new-')) {
       const idx = parseInt(rowId.slice(4))
       const existing = draftRowsRef.current.get(idx) ?? { id: null, fields: {}, filledFields: [] }
-      const newFilledFields = value.trim()
-        ? [...new Set([...existing.filledFields, columnId])]
-        : existing.filledFields
+      const newFilledFields = isEmpty
+        ? existing.filledFields.filter((f) => f !== columnId)
+        : [...new Set([...existing.filledFields.filter((f) => f !== counterpart), columnId])]
       setDraftRows((prev) => {
         const curr = prev.get(idx) ?? { id: null, fields: {}, filledFields: [] }
-        return new Map(prev).set(idx, {
-          ...curr,
-          fields: { ...curr.fields, ...fields },
-          filledFields: newFilledFields,
-        })
+        const newFields = { ...curr.fields }
+        if (isEmpty && isNumericColumn) {
+          delete (newFields as Record<string, unknown>)[columnId]
+        } else {
+          Object.assign(newFields, fields)
+          // Entering one of the pair clears the other
+          if (counterpart && !isEmpty) delete (newFields as Record<string, unknown>)[counterpart]
+        }
+        return new Map(prev).set(idx, { ...curr, fields: newFields, filledFields: newFilledFields })
       })
-      if (!value.trim()) return
-      const patchFields = { ...fields, draft_fields: newFilledFields }
+      if (isEmpty) {
+        // Still persist the clearing to DB so it survives a reload
+        if (existing.id) {
+          const clearFields: Partial<TradeFormData> = { draft_fields: newFilledFields }
+          if (isOptionalNumeric) {
+            // Can be nulled in DB
+            (clearFields as Record<string, unknown>)[columnId] = null
+            if (counterpart) (clearFields as Record<string, unknown>)[counterpart] = null
+          } else if (!isRequiredNumeric) {
+            // Text/other — save empty value
+            Object.assign(clearFields, fields)
+          }
+          // Required numerics: only update draft_fields; can't store null in a NOT NULL column
+          onPatchTrade(existing.id, clearFields)
+        }
+        return
+      }
+      const patchFields = { ...fields, ...(counterpart ? { [counterpart]: null } : {}), draft_fields: newFilledFields }
       if (existing.id) {
         onPatchTrade(existing.id, patchFields)
       } else {
@@ -475,7 +505,13 @@ export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, 
         })
       }
     } else {
-      onPatchTrade(rowId, fields)
+      // Clearing a required numeric field on a real trade reverts to old value — don't save
+      if (isEmpty && isRequiredNumeric) return
+      // Clearing an optional numeric field saves null (removes the override)
+      const saveFields = isEmpty && isOptionalNumeric
+        ? { [columnId]: null } as Partial<TradeFormData>
+        : { ...fields, ...(counterpart && !isEmpty ? { [counterpart]: null } : {}) } as Partial<TradeFormData>
+      onPatchTrade(rowId, saveFields)
     }
   }
 
@@ -639,7 +675,7 @@ export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, 
         header: () => <HeaderCell label={t('trades.columns.deviation')} tooltip={t('trades.columnTooltips.deviation')} onOpenSettings={() => handleOpenColumnSettings('deviation', t('trades.columns.deviation'), t('trades.columnTooltips.deviation'))} />,
         cell: ({ getValue }) => {
           const v = getValue<number | null>()
-          if (v === null) return null
+          if (v === null) return <SquareFunction className="mx-auto size-4 text-muted-foreground/40" />
           return <span className="tabular-nums">{fmtPercent(v)}</span>
         },
       },
@@ -647,7 +683,8 @@ export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, 
         accessorKey: 'r_multiple',
         header: () => <HeaderCell label={t('trades.columns.rMultiple')} tooltip={t('trades.columnTooltips.rMultiple')} onOpenSettings={() => handleOpenColumnSettings('r_multiple', t('trades.columns.rMultiple'), t('trades.columnTooltips.rMultiple'))} />,
         cell: ({ getValue }) => {
-          const v = getValue<number>()
+          const v = getValue<number | null>()
+          if (v === null) return <SquareFunction className="mx-auto size-4 text-muted-foreground/40" />
           return (
             <span className={`tabular-nums font-medium ${
               v >= 0
@@ -664,7 +701,7 @@ export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, 
         header: () => <HeaderCell label={t('trades.columns.riskVolatility')} tooltip={t('trades.columnTooltips.riskVolatility')} onOpenSettings={() => handleOpenColumnSettings('risk_volatility', t('trades.columns.riskVolatility'), t('trades.columnTooltips.riskVolatility'))} />,
         cell: ({ getValue }) => {
           const v = getValue<number | null>()
-          if (v === null) return null
+          if (v === null) return <SquareFunction className="mx-auto size-4 text-muted-foreground/40" />
           return <span className="tabular-nums">{fmtPercent(v)}</span>
         },
       },
@@ -672,7 +709,8 @@ export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, 
         accessorKey: 'cumulative_pnl',
         header: () => <HeaderCell label={t('trades.columns.cumulativePnl')} tooltip={t('trades.columnTooltips.cumulativePnl')} onOpenSettings={() => handleOpenColumnSettings('cumulative_pnl', t('trades.columns.cumulativePnl'), t('trades.columnTooltips.cumulativePnl'))} />,
         cell: ({ getValue }) => {
-          const v = getValue<number>()
+          const v = getValue<number | null>()
+          if (v === null) return <SquareFunction className="mx-auto size-4 text-muted-foreground/40" />
           return (
             <span className={`tabular-nums font-medium ${
               v >= 0
@@ -688,7 +726,8 @@ export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, 
         accessorKey: 'cumulative_r',
         header: () => <HeaderCell label={t('trades.columns.cumulativeR')} tooltip={t('trades.columnTooltips.cumulativeR')} onOpenSettings={() => handleOpenColumnSettings('cumulative_r', t('trades.columns.cumulativeR'), t('trades.columnTooltips.cumulativeR'))} />,
         cell: ({ getValue }) => {
-          const v = getValue<number>()
+          const v = getValue<number | null>()
+          if (v === null) return <SquareFunction className="mx-auto size-4 text-muted-foreground/40" />
           return (
             <span className={`tabular-nums font-medium ${
               v >= 0
@@ -1019,6 +1058,8 @@ export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, 
               risk: df.risk ?? 0,
               rules_followed: df.rules_followed ?? false,
               setup_type: df.setup_type ?? '',
+              realised_win: df.realised_win ?? null,
+              realised_loss: df.realised_loss ?? null,
               created_at: '',
               updated_at: '',
             }
@@ -1042,16 +1083,16 @@ export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, 
                 if (colId === 'risk') return <span className="text-sm tabular-nums">{df.risk != null ? fmtCurrency(df.risk) : ''}</span>
                 if (colId === 'rules_followed') return <span className="text-sm">{df.rules_followed != null ? (df.rules_followed ? t('trades.form.rulesYes') : t('trades.form.rulesNo')) : ''}</span>
                 if (colId === 'setup_type') return <span className="text-sm">{df.setup_type ?? ''}</span>
+                if (colId === 'realised_win') return df.realised_win != null ? <span className="text-sm tabular-nums text-green-600 dark:text-green-400">{fmtCurrency(df.realised_win)}</span> : <></>
+                if (colId === 'realised_loss') return df.realised_loss != null ? <span className="text-sm tabular-nums text-red-500">-{fmtCurrency(df.realised_loss)}</span> : <></>
                 // Auto-generated — only show when we have price data
-                if (!hasPrices) return <>&nbsp;</>
+                if (!hasPrices) return <SquareFunction className="mx-auto size-4 text-muted-foreground/40" />
                 if (colId === 'direction') return <span className={cn('text-sm font-medium', enrichedDraft.direction === 'long' ? 'text-green-500' : 'text-red-500')}>{enrichedDraft.direction === 'long' ? t('trades.direction.long') : t('trades.direction.short')}</span>
-                if (colId === 'r_multiple') return <span className={cn('text-sm tabular-nums', enrichedDraft.r_multiple >= 0 ? 'text-green-500' : 'text-red-500')}>{enrichedDraft.r_multiple.toFixed(2)}R</span>
-                if (colId === 'realised_win') return enrichedDraft.realised_win != null ? <span className="text-sm tabular-nums text-green-500">{fmtCurrency(enrichedDraft.realised_win)}</span> : <>&nbsp;</>
-                if (colId === 'realised_loss') return enrichedDraft.realised_loss != null ? <span className="text-sm tabular-nums text-red-500">-{fmtCurrency(enrichedDraft.realised_loss)}</span> : <>&nbsp;</>
-                if (colId === 'deviation') return enrichedDraft.deviation != null ? <span className="text-sm tabular-nums">{fmtPercent(enrichedDraft.deviation)}</span> : <>&nbsp;</>
-                if (colId === 'risk_volatility') return enrichedDraft.risk_volatility != null ? <span className="text-sm tabular-nums">{fmtPercent(enrichedDraft.risk_volatility)}</span> : <>&nbsp;</>
-                if (colId === 'cumulative_pnl') return <span className={cn('text-sm tabular-nums', enrichedDraft.cumulative_pnl >= 0 ? 'text-green-500' : 'text-red-500')}>{fmtCurrency(enrichedDraft.cumulative_pnl)}</span>
-                if (colId === 'cumulative_r') return <span className={cn('text-sm tabular-nums', enrichedDraft.cumulative_r >= 0 ? 'text-green-500' : 'text-red-500')}>{enrichedDraft.cumulative_r.toFixed(2)}R</span>
+                if (colId === 'r_multiple') return enrichedDraft.r_multiple != null ? <span className={cn('text-sm tabular-nums', enrichedDraft.r_multiple >= 0 ? 'text-green-500' : 'text-red-500')}>{enrichedDraft.r_multiple.toFixed(2)}R</span> : <SquareFunction className="mx-auto size-4 text-muted-foreground/40" />
+                if (colId === 'deviation') return enrichedDraft.deviation != null ? <span className="text-sm tabular-nums">{fmtPercent(enrichedDraft.deviation)}</span> : <SquareFunction className="mx-auto size-4 text-muted-foreground/40" />
+                if (colId === 'risk_volatility') return enrichedDraft.risk_volatility != null ? <span className="text-sm tabular-nums">{fmtPercent(enrichedDraft.risk_volatility)}</span> : <SquareFunction className="mx-auto size-4 text-muted-foreground/40" />
+                if (colId === 'cumulative_pnl') return enrichedDraft.cumulative_pnl != null ? <span className={cn('text-sm tabular-nums', enrichedDraft.cumulative_pnl >= 0 ? 'text-green-500' : 'text-red-500')}>{fmtCurrency(enrichedDraft.cumulative_pnl)}</span> : <SquareFunction className="mx-auto size-4 text-muted-foreground/40" />
+                if (colId === 'cumulative_r') return enrichedDraft.cumulative_r != null ? <span className={cn('text-sm tabular-nums', enrichedDraft.cumulative_r >= 0 ? 'text-green-500' : 'text-red-500')}>{enrichedDraft.cumulative_r.toFixed(2)}R</span> : <SquareFunction className="mx-auto size-4 text-muted-foreground/40" />
               }
               return <>&nbsp;</>
             }

@@ -184,12 +184,40 @@ alter table public.patches
 
 ---
 
-## 2026-06-22 — Add 'dropdown' to column_settings.format_type
+## 2026-06-22 — Add 'dropdown' and 'time24' to column_settings.format_type
+
+`dropdown` enables menu-style cells. `time24` is the 24-hour variant of the time format — the default `time` value means 12-hour.
 
 ```sql
 alter table public.column_settings drop constraint if exists column_settings_format_type_check;
 alter table public.column_settings add constraint column_settings_format_type_check
-  check (format_type in ('auto', 'text', 'currency', 'number', 'percent', 'date', 'time', 'dropdown'));
+  check (format_type in ('auto', 'text', 'currency', 'number', 'percent', 'date', 'time', 'time24', 'dropdown'));
+```
+
+---
+
+## 2026-06-22 — Add custom_data to trades
+
+Stores per-trade values for user-created custom columns. Key is the `column_id` (e.g. `custom_<uuid>`), value is always a string.
+
+```sql
+alter table public.trades
+  add column if not exists custom_data jsonb null;
+```
+
+---
+
+## 2026-06-22 — Add is_draft and draft_fields to trades
+
+Tracks which trades are in-progress (not yet complete) and which fields the user has explicitly filled.
+`draft_fields` is a jsonb array of field names the user has intentionally entered, used to restore blank-row display correctly after reload.
+
+```sql
+alter table public.trades
+  add column if not exists is_draft boolean not null default false;
+
+alter table public.trades
+  add column if not exists draft_fields jsonb null;
 ```
 
 ---
@@ -219,4 +247,17 @@ create policy "Users can manage their own column options"
 
 create index column_options_user_id_idx on public.column_options (user_id);
 create index column_options_user_column_idx on public.column_options (user_id, column_id);
+```
+
+---
+
+## 2026-06-22 — Add realised_win and realised_loss to trades
+
+`realised_win` and `realised_loss` are now manually entered by the user (actual P&L after fees).
+`null` means the user hasn't entered a value; the UI falls back to the price-computed value for display.
+
+```sql
+alter table public.trades
+  add column if not exists realised_win numeric(12, 2) null,
+  add column if not exists realised_loss numeric(12, 2) null;
 ```

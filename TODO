@@ -1,1 +1,9 @@
+- let's make the padding the context menu not left and right, just make it to the top and bottom, remove the right and left padding for each item
+
+- Can we fetch all the patches once we load the trades page, no need to move to each patch first time to load its data, i want from the begining once i switch the tabs to find the data
+
+- Add a search bar at the top to filter the table
+
+- when we add blank column, the delete trade isn't appearing, its only appearing when we have data
+
 -
