@@ -41,7 +41,7 @@ export async function createPatch(
 
 export async function updatePatch(
   patchId: string,
-  updates: Partial<{ name: string; patch_limit: number; is_hidden: boolean; sort_order: number; column_order: string[] | null }>
+  updates: Partial<{ name: string; patch_limit: number; is_hidden: boolean; sort_order: number; column_order: string[] | null; column_visibility: Record<string, boolean> | null }>
 ): Promise<{ error: string | null }> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -146,10 +146,99 @@ export async function getPatchTrades(
     .select('*')
     .eq('patch_id', patchId)
     .eq('user_id', user.id)
+    .neq('is_draft', true)
     .order('trade_number', { ascending: true })
 
   if (error) return { data: [], error: 'errors.generic' }
   return { data: (data ?? []) as RawTrade[], error: null }
+}
+
+export async function getPatchDraftTrades(
+  patchId: string
+): Promise<{ data: RawTrade[]; error: string | null }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { data: [], error: 'errors.unauthorized' }
+
+  const { data, error } = await supabase
+    .from('trades')
+    .select('*')
+    .eq('patch_id', patchId)
+    .eq('user_id', user.id)
+    .eq('is_draft', true)
+    .order('trade_number', { ascending: true })
+
+  if (error) return { data: [], error: 'errors.generic' }
+  return { data: (data ?? []) as RawTrade[], error: null }
+}
+
+export async function createDraftTrade(
+  patchId: string
+): Promise<{ data: RawTrade | null; error: string | null }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { data: null, error: 'errors.unauthorized' }
+
+  const { data: existing } = await supabase
+    .from('trades')
+    .select('trade_number')
+    .eq('patch_id', patchId)
+    .order('trade_number', { ascending: false })
+    .limit(1)
+
+  const nextNumber = existing && existing.length > 0 ? existing[0].trade_number + 1 : 1
+  const now = new Date()
+  const trade_date = now.toISOString().split('T')[0]
+  const trade_time = now.toTimeString().slice(0, 8)
+
+  const { data, error } = await supabase
+    .from('trades')
+    .insert({
+      user_id: user.id,
+      patch_id: patchId,
+      trade_number: nextNumber,
+      trade_date,
+      trade_time,
+      ticker: '',
+      direction: 'long',
+      order_type: 'market',
+      avg_entry: 0,
+      stop_loss: 0,
+      avg_exit: 0,
+      risk: 0,
+      rules_followed: false,
+      setup_type: '',
+      is_draft: true,
+      draft_fields: [],
+    })
+    .select()
+    .single()
+
+  if (error || !data) return { data: null, error: 'errors.generic' }
+  return { data: data as RawTrade, error: null }
+}
+
+export async function patchTrade(
+  tradeId: string,
+  fields: Partial<TradeFormData>
+): Promise<{ error: string | null }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'errors.unauthorized' }
+
+  const updateData: Record<string, unknown> = { ...fields, updated_at: new Date().toISOString() }
+  if (typeof fields.trade_time === 'string' && fields.trade_time.length === 5) {
+    updateData.trade_time = fields.trade_time + ':00'
+  }
+
+  const { error } = await supabase
+    .from('trades')
+    .update(updateData)
+    .eq('id', tradeId)
+    .eq('user_id', user.id)
+
+  if (error) return { error: 'errors.generic' }
+  return { error: null }
 }
 
 export async function addTrade(
@@ -297,6 +386,22 @@ export async function saveColumnVisibility(
   const { error } = await supabase
     .from('patches')
     .update({ column_visibility: visibility })
+    .eq('user_id', user.id)
+
+  if (error) return { error: 'errors.generic' }
+  return { error: null }
+}
+
+export async function saveColumnOrderGlobal(
+  order: string[]
+): Promise<{ error: string | null }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'errors.unauthorized' }
+
+  const { error } = await supabase
+    .from('patches')
+    .update({ column_order: order })
     .eq('user_id', user.id)
 
   if (error) return { error: 'errors.generic' }

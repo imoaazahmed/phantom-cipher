@@ -121,7 +121,13 @@
       "searchPlaceholder": "Search columns…",
       "searchEmpty": "No columns match your search.",
       "columnSettings": "Column Settings",
-      "addColumn": "Add Column"
+      "addColumn": "Add Column",
+      "visibilityScopeLabel": "Column Visibility",
+      "orderScopeLabel": "Column Order",
+      "scopeGlobal": "Global",
+      "scopePerPatch": "Per Patch",
+      "scopeGlobalDesc": "Applies to all patches",
+      "scopePerPatchDesc": "Applies to this patch only"
     },
     "columnTooltips": {
       "number": "Trade number",
@@ -199,6 +205,9 @@
       "formatTime": "Time",
       "formatNumber": "Number",
       "formatDropdown": "Dropdown",
+      "timeFormatLabel": "Time Format",
+      "timeFormat12h": "12h",
+      "timeFormat24h": "24h",
       "addOption": "Add Item",
       "save": "Add Column",
       "editTitle": "Edit Column",
@@ -225,10 +234,13 @@
     "cell": {
       "readOnly": "This cell is auto-generated and cannot be edited",
       "invalidNumber": "Please enter a valid number",
+      "copy": "Copy",
       "yesterday": "Yesterday",
       "today": "Today",
       "tomorrow": "Tomorrow",
-      "startTime": "Start Time"
+      "startTime": "Start Time",
+      "sectionTrade": "Trade",
+      "sectionColumn": "Column"
     },
     "addTrade": "Add Trade",
     "patches": {

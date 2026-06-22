@@ -15,24 +15,25 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { DEFAULT_COLUMN_ORDER, COLUMN_LABELS, REQUIRED_COLUMNS } from '@/lib/trades/column-order'
 import type { ColumnSetting } from '@/lib/trades/types'
 import { AddColumnDialog } from './add-column-dialog'
+
+type Scope = 'global' | 'per-patch'
 
 type ColumnsDialogProps = {
   columnVisibility: Record<string, boolean>
   onVisibilityChange: (columnId: string, visible: boolean) => void
   onShowAll: () => void
   columnSettings?: ColumnSetting[]
+  visibilityScope: Scope
+  onVisibilityScopeChange: (scope: Scope) => void
+  orderScope: Scope
+  onOrderScopeChange: (scope: Scope) => void
 }
 
-export function ColumnsDialog({ columnVisibility, onVisibilityChange, onShowAll, columnSettings = [] }: ColumnsDialogProps) {
+export function ColumnsDialog({ columnVisibility, onVisibilityChange, onShowAll, columnSettings = [], visibilityScope, onVisibilityScopeChange, orderScope, onOrderScopeChange }: ColumnsDialogProps) {
   const { t } = useTranslation()
   const [search, setSearch] = useState('')
   const [addColumnOpen, setAddColumnOpen] = useState(false)
@@ -49,18 +50,12 @@ export function ColumnsDialog({ columnVisibility, onVisibilityChange, onShowAll,
 
   return (
     <Dialog onOpenChange={() => setSearch('')}>
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <DialogTrigger asChild>
-              <Button variant="ghost" size="icon-sm" aria-label={t('trades.columns.manageColumns')}>
-                <Columns3Cog className="size-4" />
-              </Button>
-            </DialogTrigger>
-          </TooltipTrigger>
-          <TooltipContent>{t('trades.columns.manageColumns')}</TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm">
+          <Columns3Cog className="size-4" />
+          {t('trades.columns.manageColumns')}
+        </Button>
+      </DialogTrigger>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{t('trades.columns.manageColumns')}</DialogTitle>
@@ -138,6 +133,49 @@ export function ColumnsDialog({ columnVisibility, onVisibilityChange, onShowAll,
             </div>
           )}
         </ScrollArea>
+
+        <div className="border-t pt-3 space-y-3">
+          <div className="flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">{t('trades.columns.visibilityScopeLabel')}</p>
+              <p className="text-xs text-muted-foreground">
+                {visibilityScope === 'global' ? t('trades.columns.scopeGlobalDesc') : t('trades.columns.scopePerPatchDesc')}
+              </p>
+            </div>
+            <ToggleGroup
+              type="single"
+              value={visibilityScope}
+              onValueChange={(v) => { if (v) onVisibilityScopeChange(v as 'global' | 'per-patch') }}
+              variant="primary"
+              size="sm"
+              spacing={0}
+              className="shrink-0"
+            >
+              <ToggleGroupItem value="global">{t('trades.columns.scopeGlobal')}</ToggleGroupItem>
+              <ToggleGroupItem value="per-patch">{t('trades.columns.scopePerPatch')}</ToggleGroupItem>
+            </ToggleGroup>
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">{t('trades.columns.orderScopeLabel')}</p>
+              <p className="text-xs text-muted-foreground">
+                {orderScope === 'global' ? t('trades.columns.scopeGlobalDesc') : t('trades.columns.scopePerPatchDesc')}
+              </p>
+            </div>
+            <ToggleGroup
+              type="single"
+              value={orderScope}
+              onValueChange={(v) => { if (v) onOrderScopeChange(v as 'global' | 'per-patch') }}
+              variant="primary"
+              size="sm"
+              spacing={0}
+              className="shrink-0"
+            >
+              <ToggleGroupItem value="global">{t('trades.columns.scopeGlobal')}</ToggleGroupItem>
+              <ToggleGroupItem value="per-patch">{t('trades.columns.scopePerPatch')}</ToggleGroupItem>
+            </ToggleGroup>
+          </div>
+        </div>
 
         <div className="flex gap-2">
           <Button variant="outline" className="flex-1" onClick={onShowAll}>

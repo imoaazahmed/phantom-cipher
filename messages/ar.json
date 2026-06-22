@@ -121,7 +121,13 @@
       "searchPlaceholder": "بحث في الأعمدة…",
       "searchEmpty": "لا توجد أعمدة تطابق بحثك.",
       "columnSettings": "إعدادات العمود",
-      "addColumn": "إضافة عمود"
+      "addColumn": "إضافة عمود",
+      "visibilityScopeLabel": "رؤية الأعمدة",
+      "orderScopeLabel": "ترتيب الأعمدة",
+      "scopeGlobal": "عام",
+      "scopePerPatch": "لكل نموذج",
+      "scopeGlobalDesc": "يُطبَّق على جميع النماذج",
+      "scopePerPatchDesc": "يُطبَّق على هذا النموذج فقط"
     },
     "columnTooltips": {
       "number": "رقم الصفقة",
@@ -199,6 +205,9 @@
       "formatTime": "وقت",
       "formatNumber": "رقم",
       "formatDropdown": "قائمة منسدلة",
+      "timeFormatLabel": "تنسيق الوقت",
+      "timeFormat12h": "١٢ ساعة",
+      "timeFormat24h": "٢٤ ساعة",
       "addOption": "إضافة عنصر",
       "save": "إضافة عمود",
       "editTitle": "تعديل العمود",
@@ -225,10 +234,13 @@
     "cell": {
       "readOnly": "هذه الخلية مُولَّدة تلقائياً ولا يمكن تعديلها",
       "invalidNumber": "يرجى إدخال رقم صحيح",
+      "copy": "نسخ",
       "yesterday": "أمس",
       "today": "اليوم",
       "tomorrow": "غداً",
-      "startTime": "وقت البدء"
+      "startTime": "وقت البدء",
+      "sectionTrade": "الصفقة",
+      "sectionColumn": "العمود"
     },
     "addTrade": "إضافة صفقة",
     "patches": {

@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   useReactTable,
   getCoreRowModel,
@@ -24,7 +24,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { format, addDays, subDays } from 'date-fns'
 import { toast } from 'sonner'
-import { EyeOff, Info, Pencil, Plus, Settings2, Trash2, X } from 'lucide-react'
+import { Copy, EyeOff, Info, Pencil, Plus, Settings2, Trash2, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import {
   Tooltip,
@@ -55,6 +55,7 @@ import {
   ContextMenuTrigger,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuLabel,
   ContextMenuSeparator,
 } from '@/components/ui/context-menu'
 import {
@@ -69,7 +70,8 @@ import { Calendar } from '@/components/ui/calendar'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Button } from '@/components/ui/button'
-import type { EnrichedTrade, ColumnSetting, FormatType } from '@/lib/trades/types'
+import type { EnrichedTrade, RawTrade, TradeFormData, ColumnSetting, FormatType } from '@/lib/trades/types'
+import { enrichTrades } from '@/lib/trades/calculations'
 import { PINNED_COLUMN, DEFAULT_COLUMN_ORDER, REQUIRED_COLUMNS, resolveColumnOrder } from '@/lib/trades/column-order'
 import { BUILT_IN_FORMAT_TYPES, DEFAULT_MENU_OPTIONS, MENU_COLUMN_IDS } from '@/lib/trades/column-options'
 import { deleteColumnSetting } from '@/lib/trades/actions'
@@ -86,6 +88,10 @@ type Props = {
   columnSettings?: ColumnSetting[]
   columnOptions?: Record<string, { value: string; label: string }[]>
   onSaveColumnOptions?: (columnId: string, options: { value: string; label: string }[]) => Promise<void>
+  initialDraftTrades?: RawTrade[]
+  onCreateTrade: () => Promise<RawTrade | null>
+  onPatchTrade: (tradeId: string, fields: Partial<TradeFormData>) => void
+  onDeleteTrade: (tradeId: string) => Promise<void>
 }
 
 function fmtCurrency(value: number): string {
@@ -103,15 +109,16 @@ function fmtDate(dateStr: string): string {
   const [y, m, d] = dateStr.split('-')
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
   const year = y.slice(2)
-  return `${parseInt(d)} ${months[parseInt(m) - 1]} '${year}`
+  return `${d.padStart(2, '0')} ${months[parseInt(m) - 1]} '${year}`
 }
 
-function fmtTime(timeStr: string): string {
+function fmtTime(timeStr: string, use24h = false): string {
   const [hStr, mStr] = timeStr.split(':')
   const h = parseInt(hStr)
-  const ampm = h >= 12 ? 'P' : 'A'
+  if (use24h) return `${String(h).padStart(2, '0')}:${mStr}`
+  const ampm = h >= 12 ? 'PM' : 'AM'
   const h12 = h % 12 || 12
-  return `${h12}:${mStr} ${ampm}`
+  return `${String(h12).padStart(2, '0')}:${mStr} ${ampm}`
 }
 
 function HeaderCell({
@@ -162,6 +169,11 @@ function HeaderCell({
 const EDITABLE_COLUMNS = new Set([
   'trade_date', 'trade_time', 'ticker', 'order_type',
   'avg_entry', 'stop_loss', 'avg_exit', 'risk', 'rules_followed', 'setup_type',
+])
+
+const AUTO_GENERATED_COLS = new Set([
+  'direction', 'r_multiple', 'realised_win', 'realised_loss',
+  'deviation', 'risk_volatility', 'cumulative_pnl', 'cumulative_r',
 ])
 
 const colShadow = "before:pointer-events-none before:absolute before:inset-y-0 before:start-full before:w-4 before:bg-[linear-gradient(to_right,rgb(0_0_0/0.07),transparent)] rtl:before:bg-[linear-gradient(to_left,rgb(0_0_0/0.07),transparent)] dark:before:bg-[linear-gradient(to_right,rgb(255_255_255/0.1),transparent)] dark:rtl:before:bg-[linear-gradient(to_left,rgb(255_255_255/0.1),transparent)]"
@@ -284,7 +296,7 @@ function MenuCellEditor({
   )
 }
 
-export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, onColumnReorder, columnVisibility, onHideColumn, columnSettings = [], columnOptions = {}, onSaveColumnOptions }: Props) {
+export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, onColumnReorder, columnVisibility, onHideColumn, columnSettings = [], columnOptions = {}, onSaveColumnOptions, initialDraftTrades = [], onCreateTrade, onPatchTrade, onDeleteTrade }: Props) {
   const { t } = useTranslation()
 
   const customColumns = columnSettings.filter((s) => s.column_id.startsWith('custom_'))
@@ -304,10 +316,37 @@ export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, 
   const [settingsTarget, setSettingsTarget] = useState<SettingsTarget | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [tradeDeleteTarget, setTradeDeleteTarget] = useState<{ id: string; number: number; draftRowIndex?: number } | null>(null)
+  const [isDeletingTrade, setIsDeletingTrade] = useState(false)
 
   const [editingCell, setEditingCell] = useState<{ rowId: string; columnId: string } | null>(null)
   const [editValue, setEditValue] = useState('')
-  const [blankRowCount, setBlankRowCount] = useState(1)
+  const [blankRowCount, setBlankRowCount] = useState(() => Math.max(initialDraftTrades.length, trades.length === 0 ? 1 : 0))
+
+  type DraftRow = { id: string | null; fields: Partial<RawTrade>; filledFields: string[] }
+  const [draftRows, setDraftRows] = useState<Map<number, DraftRow>>(() => {
+    const map = new Map<number, DraftRow>()
+    initialDraftTrades.forEach((trade, idx) => {
+      const filledFields = trade.draft_fields ?? []
+      const fields: Partial<RawTrade> = {}
+      for (const key of filledFields) {
+        const k = key as keyof RawTrade
+        if (trade[k] !== undefined) (fields as Record<string, unknown>)[key] = trade[k]
+      }
+      if (trade.custom_data && Object.keys(trade.custom_data).length > 0) {
+        fields.custom_data = trade.custom_data
+      }
+      map.set(idx, { id: trade.id, fields, filledFields })
+    })
+    return map
+  })
+  const draftRowsRef = useRef<Map<number, DraftRow>>(new Map())
+  draftRowsRef.current = draftRows
+
+  // When the last real trade is deleted, ensure at least one blank row remains
+  useEffect(() => {
+    if (trades.length === 0) setBlankRowCount((prev) => Math.max(prev, 1))
+  }, [trades.length])
 
   function handleCellDoubleClick(rowId: string, columnId: string, currentValue: unknown) {
     const isEditable = EDITABLE_COLUMNS.has(columnId) || columnId.startsWith('custom_')
@@ -316,12 +355,16 @@ export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, 
       return
     }
     setEditingCell({ rowId, columnId })
-    setEditValue(String(currentValue ?? ''))
-  }
-
-  function commitEdit(value?: string) {
-    if (value !== undefined) setEditValue(value)
-    setEditingCell(null)
+    if (rowId.startsWith('new-')) {
+      const idx = parseInt(rowId.slice(4))
+      const draft = draftRowsRef.current.get(idx)
+      const draftVal = columnId.startsWith('custom_')
+        ? draft?.fields.custom_data?.[columnId]
+        : draft?.fields[columnId as keyof RawTrade]
+      setEditValue(draftVal !== undefined ? String(draftVal) : '')
+    } else {
+      setEditValue(String(currentValue ?? ''))
+    }
   }
 
   function cancelEdit() {
@@ -354,6 +397,88 @@ export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, 
     return (saved?.format_type as FormatType) ?? BUILT_IN_FORMAT_TYPES[columnId] ?? 'auto'
   }
 
+  function parseFieldForSave(columnId: string, raw: string): Partial<TradeFormData> {
+    if (['avg_entry', 'stop_loss', 'avg_exit', 'risk'].includes(columnId)) {
+      return { [columnId]: parseFloat(raw) || 0 } as Partial<TradeFormData>
+    }
+    if (columnId === 'rules_followed') return { rules_followed: raw === 'true' }
+    return { [columnId]: raw } as Partial<TradeFormData>
+  }
+
+  function saveAndClose(value: string) {
+    const rowId = editingCell?.rowId
+    const columnId = editingCell?.columnId
+    setEditingCell(null)
+
+    if (!rowId || !columnId) return
+
+    if (columnId.startsWith('custom_')) {
+      // Merge into custom_data — never pollutes built-in fields
+      if (rowId.startsWith('new-')) {
+        const idx = parseInt(rowId.slice(4))
+        const existing = draftRowsRef.current.get(idx) ?? { id: null, fields: {}, filledFields: [] }
+        const mergedCustomData = { ...(existing.fields.custom_data ?? {}), [columnId]: value }
+        setDraftRows((prev) => {
+          const curr = prev.get(idx) ?? { id: null, fields: {}, filledFields: [] }
+          return new Map(prev).set(idx, { ...curr, fields: { ...curr.fields, custom_data: mergedCustomData } })
+        })
+        if (!value.trim()) return
+        const patchFields = { custom_data: mergedCustomData }
+        if (existing.id) {
+          onPatchTrade(existing.id, patchFields)
+        } else {
+          onCreateTrade().then((newTrade) => {
+            if (!newTrade) return
+            setDraftRows((prev) => {
+              const curr = prev.get(idx) ?? { id: null, fields: {}, filledFields: [] }
+              return new Map(prev).set(idx, { ...curr, id: newTrade.id })
+            })
+            onPatchTrade(newTrade.id, patchFields)
+          })
+        }
+      } else {
+        const trade = trades.find((t) => t.id === rowId)
+        const mergedCustomData = { ...(trade?.custom_data ?? {}), [columnId]: value }
+        onPatchTrade(rowId, { custom_data: mergedCustomData })
+      }
+      return
+    }
+
+    const fields = parseFieldForSave(columnId, value)
+
+    if (rowId.startsWith('new-')) {
+      const idx = parseInt(rowId.slice(4))
+      const existing = draftRowsRef.current.get(idx) ?? { id: null, fields: {}, filledFields: [] }
+      const newFilledFields = value.trim()
+        ? [...new Set([...existing.filledFields, columnId])]
+        : existing.filledFields
+      setDraftRows((prev) => {
+        const curr = prev.get(idx) ?? { id: null, fields: {}, filledFields: [] }
+        return new Map(prev).set(idx, {
+          ...curr,
+          fields: { ...curr.fields, ...fields },
+          filledFields: newFilledFields,
+        })
+      })
+      if (!value.trim()) return
+      const patchFields = { ...fields, draft_fields: newFilledFields }
+      if (existing.id) {
+        onPatchTrade(existing.id, patchFields)
+      } else {
+        onCreateTrade().then((newTrade) => {
+          if (!newTrade) return
+          setDraftRows((prev) => {
+            const curr = prev.get(idx) ?? { id: null, fields: {}, filledFields: [] }
+            return new Map(prev).set(idx, { ...curr, id: newTrade.id })
+          })
+          onPatchTrade(newTrade.id, patchFields)
+        })
+      }
+    } else {
+      onPatchTrade(rowId, fields)
+    }
+  }
+
   function validateAndCommit(value?: string) {
     const columnId = editingCell?.columnId
     if (!columnId) return
@@ -368,7 +493,7 @@ export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, 
         return
       }
     }
-    commitEdit(value)
+    saveAndClose(raw)
   }
 
   const handleOpenColumnSettings = useCallback((columnId: string, label: string, description: string) => {
@@ -389,6 +514,33 @@ export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, 
     })
   }, [columnSettings, columnOptions]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  function getHeaderLabel(columnId: string): string {
+    const override = columnSettings.find((s) => s.column_id === columnId)
+    if (override) return override.name
+    const map: Record<string, string> = {
+      trade_number: t('trades.columns.number'),
+      trade_date: t('trades.columns.date'),
+      trade_time: t('trades.columns.time'),
+      ticker: t('trades.columns.ticker'),
+      direction: t('trades.columns.direction'),
+      order_type: t('trades.columns.orderType'),
+      avg_entry: t('trades.columns.avgEntry'),
+      stop_loss: t('trades.columns.stopLoss'),
+      avg_exit: t('trades.columns.avgExit'),
+      risk: t('trades.columns.risk'),
+      realised_loss: t('trades.columns.realisedLoss'),
+      realised_win: t('trades.columns.realisedWin'),
+      deviation: t('trades.columns.deviation'),
+      r_multiple: t('trades.columns.rMultiple'),
+      risk_volatility: t('trades.columns.riskVolatility'),
+      cumulative_pnl: t('trades.columns.cumulativePnl'),
+      cumulative_r: t('trades.columns.cumulativeR'),
+      rules_followed: t('trades.columns.rulesFollowed'),
+      setup_type: t('trades.columns.setupType'),
+    }
+    return map[columnId] ?? columnId
+  }
+
   const builtInColumns = useMemo<ColumnDef<EnrichedTrade>[]>(
     () => [
       {
@@ -406,7 +558,7 @@ export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, 
       {
         accessorKey: 'trade_time',
         header: () => <HeaderCell label={t('trades.columns.time')} tooltip={t('trades.columnTooltips.time')} onOpenSettings={() => handleOpenColumnSettings('trade_time', t('trades.columns.time'), t('trades.columnTooltips.time'))} />,
-        cell: ({ getValue }) => fmtTime(getValue<string>()),
+        cell: ({ getValue }) => fmtTime(getValue<string>(), resolveFormatType('trade_time') === 'time24'),
       },
       {
         accessorKey: 'ticker',
@@ -577,6 +729,7 @@ export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, 
       ...builtInColumns,
       ...customColumns.map<ColumnDef<EnrichedTrade>>((s) => ({
         id: s.column_id,
+        accessorFn: (row) => row.custom_data?.[s.column_id] ?? '',
         header: () => (
           <HeaderCell
             label={s.name}
@@ -584,7 +737,10 @@ export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, 
             onOpenSettings={() => handleOpenColumnSettings(s.column_id, s.name, s.description ?? '')}
           />
         ),
-        cell: () => null,
+        cell: ({ getValue }) => {
+          const val = getValue<string>()
+          return val ? <span className="text-sm">{val}</span> : null
+        },
       })),
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -653,6 +809,12 @@ export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, 
                         </ContextMenuTrigger>
                       </DraggableHeader>
                       <ContextMenuContent>
+                        <ContextMenuItem onClick={() => navigator.clipboard.writeText(getHeaderLabel(h.column.id))}>
+                          <Copy className="size-4" />
+                          {t('trades.cell.copy')}
+                        </ContextMenuItem>
+                        <ContextMenuSeparator />
+                        <ContextMenuLabel>{t('trades.cell.sectionColumn')}</ContextMenuLabel>
                         <ContextMenuItem
                           disabled={REQUIRED_COLUMNS.has(h.column.id)}
                           onClick={() => onHideColumn(h.column.id)}
@@ -676,6 +838,10 @@ export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, 
                             {t('trades.columns.rename')}
                           </ContextMenuItem>
                         )}
+                        <ContextMenuItem onClick={() => setAddColumnOpen(true)}>
+                          <Plus className="size-4" />
+                          {t('trades.columns.addColumn')}
+                        </ContextMenuItem>
                         {h.column.id.startsWith('custom_') ? (
                           <ContextMenuItem
                             variant="destructive"
@@ -693,11 +859,6 @@ export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, 
                             {t('trades.columns.delete')}
                           </ContextMenuItem>
                         )}
-                        <ContextMenuSeparator />
-                        <ContextMenuItem onClick={() => setAddColumnOpen(true)}>
-                          <Plus className="size-4" />
-                          {t('trades.columns.addColumn')}
-                        </ContextMenuItem>
                       </ContextMenuContent>
                     </ContextMenu>
                   )
@@ -712,96 +873,325 @@ export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, 
               {row.getVisibleCells().map((cell) => {
                 const isPinned = cell.column.id === PINNED_COLUMN
                 const isEditing = editingCell?.rowId === row.id && editingCell?.columnId === cell.column.id
+                const rawVal = cell.getValue()
+                const copyText = typeof rawVal === 'boolean'
+                  ? (rawVal ? t('trades.form.rulesYes') : t('trades.form.rulesNo'))
+                  : String(rawVal ?? '')
+                const cellContent = isEditing && cell.column.id === 'trade_date' ? (
+                  <>
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    <DateCellEditor value={editValue} open onClose={cancelEdit} onCommit={saveAndClose} />
+                  </>
+                ) : isEditing && isDropdownColumn(cell.column.id) ? (
+                  <>
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    <MenuCellEditor value={editValue} options={resolveOptions(cell.column.id)} onClose={cancelEdit} onCommit={saveAndClose} />
+                  </>
+                ) : isEditing ? (
+                  <input
+                    autoFocus
+                    type={cell.column.id === 'trade_time' ? 'time' : 'text'}
+                    value={editValue}
+                    onChange={(e) => setEditValue(e.target.value)}
+                    onBlur={() => validateAndCommit()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') validateAndCommit()
+                      if (e.key === 'Escape') cancelEdit()
+                    }}
+                    size={1}
+                    className="h-full w-full bg-transparent px-2 text-center text-sm outline-none [&::-webkit-calendar-picker-indicator]:hidden"
+                  />
+                ) : (
+                  flexRender(cell.column.columnDef.cell, cell.getContext())
+                )
+
+                if (isPinned) {
+                  return (
+                    <TableCell
+                      key={cell.id}
+                      className={cn('sticky inset-s-0 z-10 w-12.5 min-w-12.5 bg-background', scrolledX && colShadow)}
+                    >
+                      {cellContent}
+                    </TableCell>
+                  )
+                }
+
                 return (
-                  <TableCell
-                    key={cell.id}
-                    className={cn(
-                      isPinned && cn('sticky inset-s-0 z-10 w-12.5 min-w-12.5 bg-background', scrolledX && colShadow),
-                      isEditing && 'ring-1 ring-inset ring-primary',
-                      isEditing && cell.column.id !== 'trade_date' && !isDropdownColumn(cell.column.id) && 'p-0',
-                      isEditing && (cell.column.id === 'trade_date' || isDropdownColumn(cell.column.id)) && 'select-none cursor-default',
-                    )}
-                    onDoubleClick={() => handleCellDoubleClick(row.id, cell.column.id, cell.getValue())}
-                  >
-                    {isEditing && cell.column.id === 'trade_date' ? (
-                      <>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                        <DateCellEditor value={editValue} open onClose={cancelEdit} onCommit={commitEdit} />
-                      </>
-                    ) : isEditing && isDropdownColumn(cell.column.id) ? (
-                      <>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                        <MenuCellEditor value={editValue} options={resolveOptions(cell.column.id)} onClose={cancelEdit} onCommit={commitEdit} />
-                      </>
-                    ) : isEditing ? (
-                      <input
-                        autoFocus
-                        type={cell.column.id === 'trade_time' ? 'time' : 'text'}
-                        value={editValue}
-                        onChange={(e) => setEditValue(e.target.value)}
-                        onBlur={() => validateAndCommit()}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') validateAndCommit()
-                          if (e.key === 'Escape') cancelEdit()
-                        }}
-                        size={1}
-                        className="h-full w-full bg-transparent px-2 text-center text-sm outline-none [&::-webkit-calendar-picker-indicator]:hidden"
-                      />
-                    ) : (
-                      flexRender(cell.column.columnDef.cell, cell.getContext())
-                    )}
-                  </TableCell>
+                  <ContextMenu key={cell.id}>
+                    <ContextMenuTrigger asChild>
+                      <TableCell
+                        className={cn(
+                          isEditing && 'ring-1 ring-inset ring-primary',
+                          isEditing && cell.column.id !== 'trade_date' && !isDropdownColumn(cell.column.id) && 'p-0',
+                          isEditing && (cell.column.id === 'trade_date' || isDropdownColumn(cell.column.id)) && 'select-none cursor-default',
+                        )}
+                        onDoubleClick={() => handleCellDoubleClick(row.id, cell.column.id, cell.getValue())}
+                      >
+                        {cellContent}
+                      </TableCell>
+                    </ContextMenuTrigger>
+                    <ContextMenuContent>
+                      <ContextMenuItem onClick={() => navigator.clipboard.writeText(copyText)}>
+                        <Copy className="size-4" />
+                        {t('trades.cell.copy')}
+                      </ContextMenuItem>
+                      <ContextMenuSeparator />
+                      <ContextMenuLabel>{t('trades.cell.sectionTrade')}</ContextMenuLabel>
+                      <ContextMenuItem
+                        variant="destructive"
+                        onClick={() => setTradeDeleteTarget({ id: row.original.id, number: row.original.trade_number })}
+                      >
+                        <Trash2 className="size-4" />
+                        {t('trades.deleteTrade')}
+                      </ContextMenuItem>
+                      <ContextMenuSeparator />
+                      <ContextMenuLabel>{t('trades.cell.sectionColumn')}</ContextMenuLabel>
+                      <ContextMenuItem
+                        disabled={REQUIRED_COLUMNS.has(cell.column.id)}
+                        onClick={() => onHideColumn(cell.column.id)}
+                      >
+                        <EyeOff className="size-4" />
+                        {t('trades.columns.hide')}
+                      </ContextMenuItem>
+                      {cell.column.id.startsWith('custom_') ? (
+                        <ContextMenuItem
+                          onClick={() => {
+                            const s = customColumns.find((c) => c.column_id === cell.column.id)
+                            if (s) handleOpenColumnSettings(s.column_id, s.name, s.description ?? '')
+                          }}
+                        >
+                          <Pencil className="size-4" />
+                          {t('trades.columns.rename')}
+                        </ContextMenuItem>
+                      ) : (
+                        <ContextMenuItem disabled>
+                          <Pencil className="size-4" />
+                          {t('trades.columns.rename')}
+                        </ContextMenuItem>
+                      )}
+                      <ContextMenuItem onClick={() => setAddColumnOpen(true)}>
+                        <Plus className="size-4" />
+                        {t('trades.columns.addColumn')}
+                      </ContextMenuItem>
+                      {cell.column.id.startsWith('custom_') ? (
+                        <ContextMenuItem
+                          variant="destructive"
+                          onClick={() => {
+                            const setting = customColumns.find((s) => s.column_id === cell.column.id)
+                            setDeleteTarget({ id: cell.column.id, name: setting?.name ?? cell.column.id })
+                          }}
+                        >
+                          <Trash2 className="size-4" />
+                          {t('trades.columns.delete')}
+                        </ContextMenuItem>
+                      ) : (
+                        <ContextMenuItem disabled variant="destructive">
+                          <Trash2 className="size-4" />
+                          {t('trades.columns.delete')}
+                        </ContextMenuItem>
+                      )}
+                    </ContextMenuContent>
+                  </ContextMenu>
                 )
               })}
             </TableRow>
           ))}
 
           {/* Blank new-trade rows */}
-          {Array.from({ length: blankRowCount }, (_, i) => (
-            <TableRow key={`new-${i}`}>
-              {table.getVisibleLeafColumns().map((col) => {
-                const isPinned = col.id === PINNED_COLUMN
-                const rowId = `new-${i}`
-                const isEditing = editingCell?.rowId === rowId && editingCell?.columnId === col.id
-                return (
-                  <TableCell
-                    key={col.id}
-                    className={cn(
-                      isPinned && cn('sticky inset-s-0 z-10 w-12.5 min-w-12.5 bg-background', scrolledX && colShadow),
-                      isEditing && 'ring-1 ring-inset ring-primary',
-                      isEditing && col.id !== 'trade_date' && !isDropdownColumn(col.id) && 'p-0',
-                      isEditing && (col.id === 'trade_date' || isDropdownColumn(col.id)) && 'select-none cursor-default',
-                    )}
-                    onDoubleClick={() => handleCellDoubleClick(rowId, col.id, '')}
-                  >
-                    {isEditing && col.id === 'trade_date' ? (
-                      <DateCellEditor value={editValue} open onClose={cancelEdit} onCommit={commitEdit} />
-                    ) : isEditing && isDropdownColumn(col.id) ? (
-                      <MenuCellEditor value={editValue} options={resolveOptions(col.id)} onClose={cancelEdit} onCommit={commitEdit} />
-                    ) : isEditing ? (
-                      <input
-                        autoFocus
-                        type={col.id === 'trade_time' ? 'time' : 'text'}
-                        value={editValue}
-                        onChange={(e) => setEditValue(e.target.value)}
-                        onBlur={() => validateAndCommit()}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') validateAndCommit()
-                          if (e.key === 'Escape') cancelEdit()
-                        }}
-                        size={1}
-                        className="h-full w-full bg-transparent px-2 text-center text-sm outline-none [&::-webkit-calendar-picker-indicator]:hidden"
-                      />
-                    ) : isPinned ? (
-                      <span className="font-medium tabular-nums">{trades.length + i + 1}</span>
-                    ) : (
-                      <>&nbsp;</>
-                    )}
-                  </TableCell>
-                )
-              })}
-            </TableRow>
-          ))}
+          {Array.from({ length: blankRowCount }, (_, i) => {
+            const rowId = `new-${i}`
+            const draft = draftRows.get(i)
+            const df = draft?.fields ?? {}
+
+            // Build a RawTrade from the draft for enrichment (compute auto-generated columns)
+            const draftRaw: RawTrade = {
+              id: draft?.id ?? `__draft_${i}`,
+              patch_id: '',
+              trade_number: trades.length + i + 1,
+              trade_date: df.trade_date ?? new Date().toISOString().split('T')[0],
+              trade_time: df.trade_time ?? '00:00:00',
+              ticker: df.ticker ?? '',
+              direction: 'long',
+              order_type: df.order_type ?? 'market',
+              avg_entry: df.avg_entry ?? 0,
+              stop_loss: df.stop_loss ?? 0,
+              avg_exit: df.avg_exit ?? 0,
+              risk: df.risk ?? 0,
+              rules_followed: df.rules_followed ?? false,
+              setup_type: df.setup_type ?? '',
+              created_at: '',
+              updated_at: '',
+            }
+            const allForEnrich = [...(trades as unknown as RawTrade[]), draftRaw]
+            const enrichedDraft = enrichTrades(allForEnrich)[allForEnrich.length - 1]
+            const hasPrices = draftRaw.avg_entry > 0 && draftRaw.stop_loss > 0 && draftRaw.avg_exit > 0
+
+            function renderDraftCell(colId: string): React.ReactNode {
+              if (colId.startsWith('custom_')) {
+                const val = df.custom_data?.[colId]
+                return val ? <span className="text-sm">{val}</span> : <>&nbsp;</>
+              }
+              if (colId in df || AUTO_GENERATED_COLS.has(colId)) {
+                if (colId === 'trade_date') return <span className="text-sm tabular-nums">{df.trade_date ? fmtDate(df.trade_date) : ''}</span>
+                if (colId === 'trade_time') return <span className="text-sm tabular-nums">{df.trade_time ? fmtTime(String(df.trade_time), resolveFormatType('trade_time') === 'time24') : ''}</span>
+                if (colId === 'ticker') return <span className="text-sm">{df.ticker ?? ''}</span>
+                if (colId === 'order_type') return <span className="text-sm capitalize">{df.order_type ?? ''}</span>
+                if (colId === 'avg_entry') return <span className="text-sm tabular-nums">{df.avg_entry != null ? fmtCurrency(df.avg_entry) : ''}</span>
+                if (colId === 'stop_loss') return <span className="text-sm tabular-nums">{df.stop_loss != null ? fmtCurrency(df.stop_loss) : ''}</span>
+                if (colId === 'avg_exit') return <span className="text-sm tabular-nums">{df.avg_exit != null ? fmtCurrency(df.avg_exit) : ''}</span>
+                if (colId === 'risk') return <span className="text-sm tabular-nums">{df.risk != null ? fmtCurrency(df.risk) : ''}</span>
+                if (colId === 'rules_followed') return <span className="text-sm">{df.rules_followed != null ? (df.rules_followed ? t('trades.form.rulesYes') : t('trades.form.rulesNo')) : ''}</span>
+                if (colId === 'setup_type') return <span className="text-sm">{df.setup_type ?? ''}</span>
+                // Auto-generated — only show when we have price data
+                if (!hasPrices) return <>&nbsp;</>
+                if (colId === 'direction') return <span className={cn('text-sm font-medium', enrichedDraft.direction === 'long' ? 'text-green-500' : 'text-red-500')}>{enrichedDraft.direction === 'long' ? t('trades.direction.long') : t('trades.direction.short')}</span>
+                if (colId === 'r_multiple') return <span className={cn('text-sm tabular-nums', enrichedDraft.r_multiple >= 0 ? 'text-green-500' : 'text-red-500')}>{enrichedDraft.r_multiple.toFixed(2)}R</span>
+                if (colId === 'realised_win') return enrichedDraft.realised_win != null ? <span className="text-sm tabular-nums text-green-500">{fmtCurrency(enrichedDraft.realised_win)}</span> : <>&nbsp;</>
+                if (colId === 'realised_loss') return enrichedDraft.realised_loss != null ? <span className="text-sm tabular-nums text-red-500">-{fmtCurrency(enrichedDraft.realised_loss)}</span> : <>&nbsp;</>
+                if (colId === 'deviation') return enrichedDraft.deviation != null ? <span className="text-sm tabular-nums">{fmtPercent(enrichedDraft.deviation)}</span> : <>&nbsp;</>
+                if (colId === 'risk_volatility') return enrichedDraft.risk_volatility != null ? <span className="text-sm tabular-nums">{fmtPercent(enrichedDraft.risk_volatility)}</span> : <>&nbsp;</>
+                if (colId === 'cumulative_pnl') return <span className={cn('text-sm tabular-nums', enrichedDraft.cumulative_pnl >= 0 ? 'text-green-500' : 'text-red-500')}>{fmtCurrency(enrichedDraft.cumulative_pnl)}</span>
+                if (colId === 'cumulative_r') return <span className={cn('text-sm tabular-nums', enrichedDraft.cumulative_r >= 0 ? 'text-green-500' : 'text-red-500')}>{enrichedDraft.cumulative_r.toFixed(2)}R</span>
+              }
+              return <>&nbsp;</>
+            }
+
+            function getDraftCopyValue(colId: string): string {
+              if (colId.startsWith('custom_')) return df.custom_data?.[colId] ?? ''
+              if (AUTO_GENERATED_COLS.has(colId)) {
+                if (!hasPrices) return ''
+                const v = enrichedDraft[colId as keyof typeof enrichedDraft]
+                return v !== null && v !== undefined ? String(v) : ''
+              }
+              const v = df[colId as keyof typeof df]
+              if (v === null || v === undefined) return ''
+              if (typeof v === 'boolean') return v ? t('trades.form.rulesYes') : t('trades.form.rulesNo')
+              return String(v)
+            }
+
+            return (
+              <TableRow key={rowId}>
+                {table.getVisibleLeafColumns().map((col) => {
+                  const isPinned = col.id === PINNED_COLUMN
+                  const isEditing = editingCell?.rowId === rowId && editingCell?.columnId === col.id
+                  const draftCellContent = isEditing && col.id === 'trade_date' ? (
+                    <DateCellEditor value={editValue} open onClose={cancelEdit} onCommit={saveAndClose} />
+                  ) : isEditing && isDropdownColumn(col.id) ? (
+                    <MenuCellEditor value={editValue} options={resolveOptions(col.id)} onClose={cancelEdit} onCommit={saveAndClose} />
+                  ) : isEditing ? (
+                    <input
+                      autoFocus
+                      type={col.id === 'trade_time' ? 'time' : 'text'}
+                      value={editValue}
+                      onChange={(e) => setEditValue(e.target.value)}
+                      onBlur={() => validateAndCommit()}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') validateAndCommit()
+                        if (e.key === 'Escape') cancelEdit()
+                      }}
+                      size={1}
+                      className="h-full w-full bg-transparent px-2 text-center text-sm outline-none [&::-webkit-calendar-picker-indicator]:hidden"
+                    />
+                  ) : isPinned ? (
+                    <span className="font-medium tabular-nums">{trades.length + i + 1}</span>
+                  ) : (
+                    renderDraftCell(col.id)
+                  )
+
+                  if (isPinned) {
+                    return (
+                      <TableCell
+                        key={col.id}
+                        className={cn('sticky inset-s-0 z-10 w-12.5 min-w-12.5 bg-background', scrolledX && colShadow)}
+                      >
+                        {draftCellContent}
+                      </TableCell>
+                    )
+                  }
+
+                  return (
+                    <ContextMenu key={col.id}>
+                      <ContextMenuTrigger asChild>
+                        <TableCell
+                          className={cn(
+                            isEditing && 'ring-1 ring-inset ring-primary',
+                            isEditing && col.id !== 'trade_date' && !isDropdownColumn(col.id) && 'p-0',
+                            isEditing && (col.id === 'trade_date' || isDropdownColumn(col.id)) && 'select-none cursor-default',
+                          )}
+                          onDoubleClick={() => handleCellDoubleClick(rowId, col.id, '')}
+                        >
+                          {draftCellContent}
+                        </TableCell>
+                      </ContextMenuTrigger>
+                      <ContextMenuContent>
+                        <ContextMenuItem onClick={() => navigator.clipboard.writeText(getDraftCopyValue(col.id))}>
+                          <Copy className="size-4" />
+                          {t('trades.cell.copy')}
+                        </ContextMenuItem>
+                        <ContextMenuSeparator />
+                        <ContextMenuLabel>{t('trades.cell.sectionTrade')}</ContextMenuLabel>
+                        {draft?.id && (
+                          <ContextMenuItem
+                            variant="destructive"
+                            onClick={() => setTradeDeleteTarget({ id: draft.id!, number: trades.length + i + 1, draftRowIndex: i })}
+                          >
+                            <Trash2 className="size-4" />
+                            {t('trades.deleteTrade')}
+                          </ContextMenuItem>
+                        )}
+                        <ContextMenuSeparator />
+                        <ContextMenuLabel>{t('trades.cell.sectionColumn')}</ContextMenuLabel>
+                        <ContextMenuItem
+                          disabled={REQUIRED_COLUMNS.has(col.id)}
+                          onClick={() => onHideColumn(col.id)}
+                        >
+                          <EyeOff className="size-4" />
+                          {t('trades.columns.hide')}
+                        </ContextMenuItem>
+                        {col.id.startsWith('custom_') ? (
+                          <ContextMenuItem
+                            onClick={() => {
+                              const s = customColumns.find((c) => c.column_id === col.id)
+                              if (s) handleOpenColumnSettings(s.column_id, s.name, s.description ?? '')
+                            }}
+                          >
+                            <Pencil className="size-4" />
+                            {t('trades.columns.rename')}
+                          </ContextMenuItem>
+                        ) : (
+                          <ContextMenuItem disabled>
+                            <Pencil className="size-4" />
+                            {t('trades.columns.rename')}
+                          </ContextMenuItem>
+                        )}
+                        <ContextMenuItem onClick={() => setAddColumnOpen(true)}>
+                          <Plus className="size-4" />
+                          {t('trades.columns.addColumn')}
+                        </ContextMenuItem>
+                        {col.id.startsWith('custom_') ? (
+                          <ContextMenuItem
+                            variant="destructive"
+                            onClick={() => {
+                              const setting = customColumns.find((s) => s.column_id === col.id)
+                              setDeleteTarget({ id: col.id, name: setting?.name ?? col.id })
+                            }}
+                          >
+                            <Trash2 className="size-4" />
+                            {t('trades.columns.delete')}
+                          </ContextMenuItem>
+                        ) : (
+                          <ContextMenuItem disabled variant="destructive">
+                            <Trash2 className="size-4" />
+                            {t('trades.columns.delete')}
+                          </ContextMenuItem>
+                        )}
+                      </ContextMenuContent>
+                    </ContextMenu>
+                  )
+                })}
+              </TableRow>
+            )
+          })}
 
           {/* Add Trade row — colSpan fills the table width; sticky div inside keeps text pinned to the start */}
           <TableRow className="group cursor-pointer border-t border-b border-[--color-border]" onClick={() => setBlankRowCount((c) => c + 1)}>
@@ -878,6 +1268,56 @@ export function TradesTable({ trades, scrolledX, scrolledY, initialColumnOrder, 
           >
             <Spinner data-icon="inline-start" className={isDeleting ? '' : 'hidden'} />
             {t('trades.deleteColumnDialog.confirm')}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    <AlertDialog open={!!tradeDeleteTarget} onOpenChange={(open) => { if (!open) setTradeDeleteTarget(null) }}>
+      <AlertDialogContent>
+        <AlertDialogCancel size="icon-sm" variant="ghost" className="absolute inset-e-3 top-3">
+          <X className="size-4" />
+        </AlertDialogCancel>
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            {t('trades.deleteConfirmTitle', { number: tradeDeleteTarget?.number ?? '' })}
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            {t('trades.deleteConfirmDescription')}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={isDeletingTrade}>
+            {t('trades.cancel')}
+          </AlertDialogCancel>
+          <AlertDialogAction
+            variant="destructive"
+            disabled={isDeletingTrade}
+            onClick={async (e) => {
+              e.preventDefault()
+              if (!tradeDeleteTarget) return
+              setIsDeletingTrade(true)
+              await onDeleteTrade(tradeDeleteTarget.id)
+              setIsDeletingTrade(false)
+              if (tradeDeleteTarget.draftRowIndex !== undefined) {
+                const deletedIdx = tradeDeleteTarget.draftRowIndex
+                setDraftRows((prev) => {
+                  const next = new Map<number, DraftRow>()
+                  for (const [idx, row] of prev) {
+                    if (idx < deletedIdx) next.set(idx, row)
+                    else if (idx > deletedIdx) next.set(idx - 1, row)
+                  }
+                  return next
+                })
+                setBlankRowCount((prev) => {
+                  const next = Math.max(0, prev - 1)
+                  return trades.length === 0 && next === 0 ? 1 : next
+                })
+              }
+              setTradeDeleteTarget(null)
+            }}
+          >
+            <Spinner data-icon="inline-start" className={isDeletingTrade ? '' : 'hidden'} />
+            {t('trades.confirm')}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

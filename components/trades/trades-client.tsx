@@ -27,11 +27,34 @@ import {
   deletePatch,
   duplicatePatch,
   getPatchTrades,
+  getPatchDraftTrades,
   saveColumnVisibility,
+  saveColumnOrderGlobal,
   saveColumnOptions,
+  createDraftTrade,
+  patchTrade,
+  deleteTrade,
 } from "@/lib/trades/actions"
 import { DEFAULT_MENU_OPTIONS } from "@/lib/trades/column-options"
-import type { Patch, RawTrade, ColumnSetting } from "@/lib/trades/types"
+import type { Patch, RawTrade, TradeFormData, ColumnSetting } from "@/lib/trades/types"
+
+// Module-level: persists across component mounts/unmounts so in-flight writes
+// survive a navigation that unmounts and remounts TradesClient, preventing a
+// re-fetch from reading stale DB data before the write has committed.
+const _pendingWrites = new Map<string, Set<Promise<unknown>>>()
+
+function _trackWrite(patchId: string, promise: Promise<unknown>) {
+  if (!_pendingWrites.has(patchId)) _pendingWrites.set(patchId, new Set())
+  const set = _pendingWrites.get(patchId)!
+  set.add(promise)
+  promise.finally(() => set.delete(promise))
+}
+
+function _waitForWrites(patchId: string): Promise<void> {
+  const set = _pendingWrites.get(patchId)
+  if (!set || set.size === 0) return Promise.resolve()
+  return Promise.all([...set]).then(() => {})
+}
 
 type Props = {
   patches: Patch[]
@@ -77,12 +100,33 @@ export function TradesClient({ patches: initialPatches, columnSettings, savedCol
   const [scrolledX, setScrolledX] = useState(false)
   const [scrolledY, setScrolledY] = useState(false)
   const [tradeCache, setTradeCache] = useState<Map<string, RawTrade[]>>(new Map())
+  const [draftTradeCache, setDraftTradeCache] = useState<Map<string, RawTrade[]>>(new Map())
   const [loadingTrades, setLoadingTrades] = useState(false)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(
     savedColumnVisibility ?? {}
   )
+
+  type Scope = 'global' | 'per-patch'
+  const [visibilityScope, setVisibilityScope] = useState<Scope>(() => {
+    try { return (localStorage.getItem('trading-logs:visibility-scope') as Scope) ?? 'global' }
+    catch { return 'global' }
+  })
+  const [orderScope, setOrderScope] = useState<Scope>(() => {
+    try { return (localStorage.getItem('trading-logs:order-scope') as Scope) ?? 'global' }
+    catch { return 'global' }
+  })
+
+  function handleVisibilityScopeChange(scope: Scope) {
+    setVisibilityScope(scope)
+    try { localStorage.setItem('trading-logs:visibility-scope', scope) } catch {}
+  }
+
+  function handleOrderScopeChange(scope: Scope) {
+    setOrderScope(scope)
+    try { localStorage.setItem('trading-logs:order-scope', scope) } catch {}
+  }
 
   // URL param (patchId) takes priority; then localStorage (localPatchId); then last visible.
   const activePatchId =
@@ -116,12 +160,23 @@ export function TradesClient({ patches: initialPatches, columnSettings, savedCol
 
   useEffect(() => {
     if (!activePatchId) return
-    const cached = tradeCache.has(activePatchId)
-    if (!cached) setLoadingTrades(true)
-    getPatchTrades(activePatchId).then(({ data }) => {
-      setTradeCache((prev) => new Map(prev).set(activePatchId, data))
-      setLoadingTrades(false)
-    })
+    // Cache hit: show existing data instantly (preserves scroll, avoids flicker).
+    // Any pending writes have already been tracked via _trackWrite; when they
+    // complete they will silently refresh the cache without a loading state.
+    if (tradeCache.has(activePatchId)) return
+    setLoadingTrades(true)
+    const pId = activePatchId
+    // Fresh mount / first visit to this patch: wait for any in-flight writes
+    // before reading from DB so we never see stale data on a quick navigate-back.
+    _waitForWrites(pId).then(() =>
+      Promise.all([getPatchTrades(pId), getPatchDraftTrades(pId)]).then(
+        ([{ data: real }, { data: drafts }]) => {
+          setTradeCache((prev) => new Map(prev).set(pId, real))
+          setDraftTradeCache((prev) => new Map(prev).set(pId, drafts))
+          setLoadingTrades(false)
+        }
+      )
+    )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activePatchId])
 
@@ -209,7 +264,12 @@ export function TradesClient({ patches: initialPatches, columnSettings, savedCol
 
   function persistVisibility(next: Record<string, boolean>) {
     if (saveTimer.current) clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(() => saveColumnVisibility(next), 800)
+    if (visibilityScope === 'global') {
+      saveTimer.current = setTimeout(() => saveColumnVisibility(next), 800)
+    } else {
+      const pId = activePatchId
+      saveTimer.current = setTimeout(() => updatePatch(pId, { column_visibility: next }), 800)
+    }
   }
 
   function handleVisibilityChange(columnId: string, visible: boolean) {
@@ -234,10 +294,80 @@ export function TradesClient({ patches: initialPatches, columnSettings, savedCol
   async function handleColumnReorder(order: string[]) {
     const id = activePatchId
     if (!id) return
-    setPatches((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, column_order: order } : p))
+    if (orderScope === 'global') {
+      setPatches((prev) => prev.map((p) => ({ ...p, column_order: order })))
+      await saveColumnOrderGlobal(order)
+    } else {
+      setPatches((prev) =>
+        prev.map((p) => (p.id === id ? { ...p, column_order: order } : p))
+      )
+      await updatePatch(id, { column_order: order })
+    }
+  }
+
+  async function handleCreateTrade(): Promise<RawTrade | null> {
+    const { data } = await createDraftTrade(activePatchId)
+    if (data) {
+      setDraftTradeCache((prev) => {
+        const current = prev.get(activePatchId) ?? []
+        return new Map(prev).set(activePatchId, [...current, data])
+      })
+    }
+    return data ?? null
+  }
+
+  function handlePatchTrade(tradeId: string, fields: Partial<TradeFormData>) {
+    const pId = activePatchId
+    // Optimistic update for real trades
+    setTradeCache((prev) => {
+      const current = prev.get(pId) ?? []
+      const updated = current.map((t) => (t.id === tradeId ? { ...t, ...fields } : t))
+      return new Map(prev).set(pId, updated)
+    })
+    // Optimistic update for draft trades
+    setDraftTradeCache((prev) => {
+      const current = prev.get(pId) ?? []
+      const idx = current.findIndex((t) => t.id === tradeId)
+      if (idx === -1) return prev
+      const updated = [...current]
+      updated[idx] = { ...updated[idx], ...fields }
+      return new Map(prev).set(pId, updated)
+    })
+    // Write to DB, then silently refresh the cache so subsequent patch-switches
+    // and remounts always see DB-confirmed data — no loading state shown.
+    const fullPromise = patchTrade(tradeId, fields).then(() =>
+      Promise.all([getPatchTrades(pId), getPatchDraftTrades(pId)]).then(
+        ([{ data: real }, { data: drafts }]) => {
+          setTradeCache((prev) => new Map(prev).set(pId, real))
+          setDraftTradeCache((prev) => new Map(prev).set(pId, drafts))
+        }
+      )
     )
-    await updatePatch(id, { column_order: order })
+    // Track the full promise (write + refresh) so remount fetches wait for it
+    _trackWrite(pId, fullPromise)
+  }
+
+  async function handleDeleteTrade(tradeId: string) {
+    const pId = activePatchId
+    // Optimistic removal from both caches
+    setTradeCache((prev) => {
+      const current = prev.get(pId) ?? []
+      return new Map(prev).set(pId, current.filter((t) => t.id !== tradeId))
+    })
+    setDraftTradeCache((prev) => {
+      const current = prev.get(pId) ?? []
+      return new Map(prev).set(pId, current.filter((t) => t.id !== tradeId))
+    })
+    await deleteTrade(tradeId)
+    // Background re-fetch after commit so any concurrent patch background refresh
+    // cannot restore the deleted row. Tracked in _pendingWrites for remount safety.
+    const refresh = Promise.all([getPatchTrades(pId), getPatchDraftTrades(pId)]).then(
+      ([{ data: real }, { data: drafts }]) => {
+        setTradeCache((prev) => new Map(prev).set(pId, real))
+        setDraftTradeCache((prev) => new Map(prev).set(pId, drafts))
+      }
+    )
+    _trackWrite(pId, refresh)
   }
 
   async function handleSaveColumnOptions(columnId: string, options: { value: string; label: string }[]) {
@@ -258,6 +388,7 @@ export function TradesClient({ patches: initialPatches, columnSettings, savedCol
   }
 
   const rawTrades = tradeCache.get(activePatchId) ?? []
+  const draftTrades = draftTradeCache.get(activePatchId) ?? []
   const enriched = enrichTrades(rawTrades)
   const allHidden = patches.length > 0 && patches.every((p) => p.is_hidden)
   const noPatches = patches.length === 0
@@ -273,6 +404,10 @@ export function TradesClient({ patches: initialPatches, columnSettings, savedCol
             onVisibilityChange={handleVisibilityChange}
             onShowAll={handleShowAll}
             columnSettings={columnSettings}
+            visibilityScope={visibilityScope}
+            onVisibilityScopeChange={handleVisibilityScopeChange}
+            orderScope={orderScope}
+            onOrderScopeChange={handleOrderScopeChange}
           />
         </div>
       )}
@@ -327,6 +462,10 @@ export function TradesClient({ patches: initialPatches, columnSettings, savedCol
                   columnSettings={columnSettings}
                   columnOptions={columnOptions}
                   onSaveColumnOptions={handleSaveColumnOptions}
+                  initialDraftTrades={draftTrades}
+                  onCreateTrade={handleCreateTrade}
+                  onPatchTrade={handlePatchTrade}
+                  onDeleteTrade={handleDeleteTrade}
                 />
                 <div className="border-t border-[--color-border] p-4">
                   {/* Statistics panel */}

@@ -27,6 +27,9 @@ export type RawTrade = {
   risk: number
   rules_followed: boolean
   setup_type: string
+  is_draft?: boolean
+  draft_fields?: string[]
+  custom_data?: Record<string, string>
   created_at: string
   updated_at: string
 }
@@ -54,6 +57,8 @@ export type TradeFormData = {
   risk: number
   rules_followed: boolean
   setup_type: string
+  draft_fields?: string[]
+  custom_data?: Record<string, string>
 }
 
 export type TradePreview = {
@@ -71,7 +76,7 @@ export type ColumnOption = {
   created_at: string
 }
 
-export const FORMAT_TYPES = ['auto', 'text', 'currency', 'number', 'percent', 'date', 'time', 'dropdown'] as const
+export const FORMAT_TYPES = ['auto', 'text', 'currency', 'number', 'percent', 'date', 'time', 'time24', 'dropdown'] as const
 export type FormatType = (typeof FORMAT_TYPES)[number]
 
 export type ColumnSetting = {

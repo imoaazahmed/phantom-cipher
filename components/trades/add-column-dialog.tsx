@@ -23,6 +23,7 @@ import { CSS } from '@dnd-kit/utilities'
 import { EyeOff, GripVertical, Info, Plus, Trash2 } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import {
   Dialog,
   DialogContent,
@@ -170,6 +171,7 @@ export function AddColumnDialog({
     handleSubmit,
     reset,
     setError,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<ColumnSettingFormData>({
     resolver: yupResolver(columnSettingSchema),
@@ -178,6 +180,7 @@ export function AddColumnDialog({
 
   const watchedFormatType = useWatch({ control, name: 'format_type' })
   const showOptions = watchedFormatType === 'dropdown'
+  const showTimeToggle = watchedFormatType === 'time' || watchedFormatType === 'time24'
 
   useEffect(() => {
     if (open) {
@@ -375,7 +378,7 @@ export function AddColumnDialog({
               name="format_type"
               render={({ field }) => (
                 <Select
-                  value={field.value ?? 'auto'}
+                  value={['time', 'time24'].includes(field.value ?? '') ? 'time' : (field.value ?? 'auto')}
                   onValueChange={field.onChange}
                   disabled={isCellTypeLocked}
                 >
@@ -393,6 +396,31 @@ export function AddColumnDialog({
               )}
             />
           </div>
+
+          {/* Time format toggle — 12h / 24h */}
+          {showTimeToggle && (
+            <div className="space-y-1.5">
+              <Label>{t('trades.addColumnDialog.timeFormatLabel')}</Label>
+              <ToggleGroup
+                type="single"
+                variant="primary"
+                spacing={0}
+                value={watchedFormatType === 'time24' ? '24' : '12'}
+                onValueChange={(v) => {
+                  if (!v) return
+                  setValue('format_type', v === '24' ? 'time24' : 'time')
+                }}
+                className="w-full"
+              >
+                <ToggleGroupItem value="12" className="flex-1">
+{t('trades.addColumnDialog.timeFormat12h')}
+                </ToggleGroupItem>
+                <ToggleGroupItem value="24" className="flex-1">
+{t('trades.addColumnDialog.timeFormat24h')}
+                </ToggleGroupItem>
+              </ToggleGroup>
+            </div>
+          )}
 
           {/* Dropdown options */}
           {showOptions && (
@@ -483,7 +511,7 @@ export function AddColumnDialog({
             <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
               {t('trades.cancel')}
             </Button>
-            <Button type="submit" disabled={isSubmitting || (isBuiltIn && isCellTypeLocked && !showOptions)}>
+            <Button type="submit" disabled={isSubmitting || (isBuiltIn && isCellTypeLocked && !showOptions && !showTimeToggle)}>
               <Spinner data-icon="inline-start" className={isSubmitting ? '' : 'hidden'} />
               {t(isEditing ? 'trades.addColumnDialog.saveEdit' : 'trades.addColumnDialog.save')}
             </Button>
