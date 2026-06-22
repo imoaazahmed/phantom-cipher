@@ -172,11 +172,43 @@ create index column_settings_user_id_idx on public.column_settings (user_id);
 
 ---
 
+---
+
+## 5. column_options
+
+Per-user custom options for menu columns (ticker, order_type, rules_followed, setup_type). When a user has rows here for a given `column_id`, those rows replace the hardcoded defaults. When no rows exist, the app falls back to `DEFAULT_MENU_OPTIONS` in `lib/trades/column-options.ts`.
+
+```sql
+create table public.column_options (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid references auth.users(id) on delete cascade not null,
+  column_id text not null,
+  value text not null,
+  label text not null,
+  position integer not null default 0,
+  created_at timestamptz default now() not null,
+  unique (user_id, column_id, value)
+);
+
+alter table public.column_options enable row level security;
+
+create policy "Users can manage their own column options"
+  on public.column_options for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create index column_options_user_id_idx on public.column_options (user_id);
+create index column_options_user_column_idx on public.column_options (user_id, column_id);
+```
+
+---
+
 ## Checklist
 
 - [ ] Run `profiles` table + trigger first
 - [ ] Run `patches` table second (trades references patches)
 - [ ] Run `trades` table third
 - [ ] Run `column_settings` table fourth
+- [ ] Run `column_options` table fifth
 - [ ] Confirm RLS is enabled: Table Editor → each table → RLS badge shows "Enabled"
 - [ ] Test with a real signup to confirm the profile trigger fires

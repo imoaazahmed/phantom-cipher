@@ -181,3 +181,42 @@ alter table public.patches
 ```
 
 `null` means all columns visible (default). Value is a `Record<string, boolean>` — `false` means hidden, `true` or absent means visible.
+
+---
+
+## 2026-06-22 — Add 'dropdown' to column_settings.format_type
+
+```sql
+alter table public.column_settings drop constraint if exists column_settings_format_type_check;
+alter table public.column_settings add constraint column_settings_format_type_check
+  check (format_type in ('auto', 'text', 'currency', 'number', 'percent', 'date', 'time', 'dropdown'));
+```
+
+---
+
+## 2026-06-22 — Add column_options table
+
+Stores per-user options for menu columns (ticker, order_type, rules_followed, setup_type). When rows exist for a `column_id`, they replace the hardcoded defaults in `lib/trades/column-options.ts`. The save strategy is delete-then-insert for a given `(user_id, column_id)` pair, so order is controlled via the `position` field.
+
+```sql
+create table public.column_options (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid references auth.users(id) on delete cascade not null,
+  column_id text not null,
+  value text not null,
+  label text not null,
+  position integer not null default 0,
+  created_at timestamptz default now() not null,
+  unique (user_id, column_id, value)
+);
+
+alter table public.column_options enable row level security;
+
+create policy "Users can manage their own column options"
+  on public.column_options for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create index column_options_user_id_idx on public.column_options (user_id);
+create index column_options_user_column_idx on public.column_options (user_id, column_id);
+```

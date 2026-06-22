@@ -189,6 +189,7 @@
       "namePlaceholder": "مثال: ملاحظات",
       "descriptionLabel": "الوصف",
       "descriptionPlaceholder": "اختياري. يُعرض في تلميح رأس العمود.",
+      "cellTypeLabel": "نوع الخلية",
       "formatLabel": "التنسيق",
       "formatAuto": "تلقائي",
       "formatText": "نص",
@@ -197,11 +198,38 @@
       "formatDate": "تاريخ",
       "formatTime": "وقت",
       "formatNumber": "رقم",
+      "formatDropdown": "قائمة منسدلة",
+      "addOption": "إضافة عنصر",
       "save": "إضافة عمود",
       "editTitle": "تعديل العمود",
       "saveEdit": "حفظ التغييرات",
-      "noDescriptionHint": "أضف وصفاً لهذا العمود لعرضه في تلميح الأداة"
+      "noDescriptionHint": "أضف وصفاً لهذا العمود لعرضه في تلميح الأداة",
+      "builtInAlert": "هذا عمود مدمج. اسمه ووصفه ونوع خليته مقفلة ولا يمكن تغييرها.",
+      "builtInLockedItemsAlert": "هذا عمود مدمج. يمكنك فقط إعادة ترتيب العناصر — الإضافة والتسمية والحذف غير مسموح بها.",
+      "dangerZone": "منطقة الخطر",
+      "hideColumnLabel": "إخفاء العمود",
+      "hideColumnDescription": "سيُخفى العمود من الجدول. يمكنك إظهاره في أي وقت من مدير الأعمدة.",
+      "deleteColumnLabel": "حذف العمود",
+      "deleteColumnDescription": "لا يمكن التراجع عن هذا الإجراء. ستُحذف جميع القيم المخزنة في هذا العمود نهائياً."
     },
+    "columnOptions": {
+      "title": "خيارات {{column}}",
+      "addPlaceholder": "خيار جديد…",
+      "save": "حفظ",
+      "editOption": "إعادة تسمية الخيار",
+      "deleteOption": "حذف الخيار",
+      "dragHandle": "اسحب لإعادة الترتيب",
+      "confirmEdit": "تأكيد",
+      "cancelEdit": "إلغاء"
+    },
+    "cell": {
+      "readOnly": "هذه الخلية مُولَّدة تلقائياً ولا يمكن تعديلها",
+      "yesterday": "أمس",
+      "today": "اليوم",
+      "tomorrow": "غداً",
+      "startTime": "وقت البدء"
+    },
+    "addTrade": "إضافة صفقة",
     "patches": {
       "newTitle": "دفعة جديدة",
       "renameTitle": "إعادة تسمية الدفعة",

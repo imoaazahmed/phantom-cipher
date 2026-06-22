@@ -3,7 +3,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import type { Patch, RawTrade, TradeFormData, ColumnSetting, FormatType } from './types'
+import type { Patch, RawTrade, TradeFormData, ColumnSetting, FormatType, ColumnOption } from './types'
 
 export async function createPatch(
   name: string,
@@ -317,4 +317,84 @@ export async function deleteColumnSetting(columnId: string): Promise<{ error: st
   if (error) return { error: 'errors.generic' }
   revalidatePath('/trades')
   return { error: null }
+}
+
+export async function upsertColumnSetting(input: {
+  column_id: string
+  name: string
+  description?: string
+  format_type: FormatType
+}): Promise<{ error: string | null }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'errors.unauthorized' }
+
+  const { error } = await supabase
+    .from('column_settings')
+    .upsert({
+      user_id: user.id,
+      column_id: input.column_id,
+      name: input.name,
+      description: input.description || null,
+      format_type: input.format_type,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id,column_id' })
+
+  if (error) return { error: 'errors.generic' }
+  revalidatePath('/trades')
+  return { error: null }
+}
+
+export async function getColumnOptions(): Promise<Record<string, ColumnOption[]>> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return {}
+
+  const { data } = await supabase
+    .from('column_options')
+    .select('*')
+    .eq('user_id', user.id)
+    .order('position', { ascending: true })
+
+  if (!data || data.length === 0) return {}
+
+  const grouped: Record<string, ColumnOption[]> = {}
+  for (const row of data as ColumnOption[]) {
+    if (!grouped[row.column_id]) grouped[row.column_id] = []
+    grouped[row.column_id].push(row)
+  }
+  return grouped
+}
+
+export async function saveColumnOptions(
+  columnId: string,
+  options: { value: string; label: string }[]
+): Promise<{ data: ColumnOption[] | null; error: string | null }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { data: null, error: 'errors.unauthorized' }
+
+  await supabase
+    .from('column_options')
+    .delete()
+    .eq('user_id', user.id)
+    .eq('column_id', columnId)
+
+  if (options.length === 0) return { data: [], error: null }
+
+  const rows = options.map((opt, i) => ({
+    user_id: user.id,
+    column_id: columnId,
+    value: opt.value,
+    label: opt.label,
+    position: i,
+  }))
+
+  const { data, error } = await supabase
+    .from('column_options')
+    .insert(rows)
+    .select()
+
+  if (error) return { data: null, error: 'errors.generic' }
+  return { data: data as ColumnOption[], error: null }
 }

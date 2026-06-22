@@ -1,14 +1,15 @@
 // lib/trades/calculations.ts
 import type { RawTrade, EnrichedTrade, TradePreview } from './types'
 
-function dirFactor(direction: 'long' | 'short'): 1 | -1 {
-  return direction === 'long' ? 1 : -1
+export function deriveDirection(avg_entry: number, stop_loss: number): 'long' | 'short' {
+  return avg_entry > stop_loss ? 'long' : 'short'
 }
 
-function calcR(trade: RawTrade): number {
-  const factor = dirFactor(trade.direction)
-  const priceDiff = (trade.avg_exit - trade.avg_entry) * factor
-  const riskDistance = (trade.avg_entry - trade.stop_loss) * factor
+function calcR(avg_entry: number, stop_loss: number, avg_exit: number): number {
+  const direction = deriveDirection(avg_entry, stop_loss)
+  const factor = direction === 'long' ? 1 : -1
+  const priceDiff = (avg_exit - avg_entry) * factor
+  const riskDistance = (avg_entry - stop_loss) * factor
   if (riskDistance === 0) return 0
   return priceDiff / riskDistance
 }
@@ -18,7 +19,8 @@ export function enrichTrades(trades: RawTrade[]): EnrichedTrade[] {
   let cumulative_r = 0
 
   return trades.map((trade, index) => {
-    const r_multiple = calcR(trade)
+    const direction = deriveDirection(trade.avg_entry, trade.stop_loss)
+    const r_multiple = calcR(trade.avg_entry, trade.stop_loss, trade.avg_exit)
     const pnl = r_multiple * trade.risk
     const realised_win = pnl > 0 ? pnl : null
     const realised_loss = pnl < 0 ? Math.abs(pnl) : null
@@ -34,6 +36,7 @@ export function enrichTrades(trades: RawTrade[]): EnrichedTrade[] {
 
     return {
       ...trade,
+      direction,
       r_multiple,
       pnl,
       realised_win,
@@ -51,12 +54,12 @@ export function calcPreview(
   stop_loss: number | undefined,
   avg_exit: number | undefined,
   risk: number | undefined,
-  direction: 'long' | 'short' | undefined
 ): TradePreview | null {
-  if (!avg_entry || !stop_loss || !avg_exit || !risk || !direction) return null
+  if (!avg_entry || !stop_loss || !avg_exit || !risk) return null
   if (avg_entry <= 0 || stop_loss <= 0 || avg_exit <= 0 || risk <= 0) return null
 
-  const factor = dirFactor(direction)
+  const direction = deriveDirection(avg_entry, stop_loss)
+  const factor = direction === 'long' ? 1 : -1
   const riskDistance = (avg_entry - stop_loss) * factor
   if (riskDistance <= 0) return null
 

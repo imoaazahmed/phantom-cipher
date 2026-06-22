@@ -28,13 +28,16 @@ import {
   duplicatePatch,
   getPatchTrades,
   saveColumnVisibility,
+  saveColumnOptions,
 } from "@/lib/trades/actions"
+import { DEFAULT_MENU_OPTIONS } from "@/lib/trades/column-options"
 import type { Patch, RawTrade, ColumnSetting } from "@/lib/trades/types"
 
 type Props = {
   patches: Patch[]
   columnSettings: ColumnSetting[]
   savedColumnVisibility: Record<string, boolean> | null
+  initialColumnOptions: Record<string, { value: string; label: string }[]>
 }
 
 const LAST_PATCH_KEY = "trading-logs:last-patch"
@@ -47,9 +50,12 @@ function fallbackPatch(list: Patch[], removedId: string): string {
   return list.find((p) => p.id !== removedId && !p.is_hidden)?.id ?? ""
 }
 
-export function TradesClient({ patches: initialPatches, columnSettings, savedColumnVisibility }: Props) {
+export function TradesClient({ patches: initialPatches, columnSettings, savedColumnVisibility, initialColumnOptions }: Props) {
   const { t } = useTranslation()
   const [patches, setPatches] = useState<Patch[]>(initialPatches)
+  const [columnOptions, setColumnOptions] = useState<Record<string, { value: string; label: string }[]>>(
+    () => ({ ...DEFAULT_MENU_OPTIONS, ...initialColumnOptions })
+  )
   const [patchId, setPatchId] = useQueryState("patch", { defaultValue: "" })
 
   const [localPatchId, setLocalPatchId] = useState<string>("")
@@ -234,6 +240,13 @@ export function TradesClient({ patches: initialPatches, columnSettings, savedCol
     await updatePatch(id, { column_order: order })
   }
 
+  async function handleSaveColumnOptions(columnId: string, options: { value: string; label: string }[]) {
+    const { error } = await saveColumnOptions(columnId, options)
+    if (!error) {
+      setColumnOptions((prev) => ({ ...prev, [columnId]: options }))
+    }
+  }
+
   async function handleReorder(orderedIds: string[]) {
     setPatches((prev) => {
       const map = new Map(prev.map((p) => [p.id, p]))
@@ -301,17 +314,24 @@ export function TradesClient({ patches: initialPatches, columnSettings, savedCol
                 <Spinner />
               </div>
             ) : (
-              <TradesTable
-                key={activePatchId}
-                trades={enriched}
-                scrolledX={scrolledX}
-                scrolledY={scrolledY}
-                initialColumnOrder={activePatch?.column_order ?? null}
-                onColumnReorder={handleColumnReorder}
-                columnVisibility={columnVisibility}
-                onHideColumn={handleHideColumn}
-                columnSettings={columnSettings}
-              />
+              <div className="flex flex-col">
+                <TradesTable
+                  key={activePatchId}
+                  trades={enriched}
+                  scrolledX={scrolledX}
+                  scrolledY={scrolledY}
+                  initialColumnOrder={activePatch?.column_order ?? null}
+                  onColumnReorder={handleColumnReorder}
+                  columnVisibility={columnVisibility}
+                  onHideColumn={handleHideColumn}
+                  columnSettings={columnSettings}
+                  columnOptions={columnOptions}
+                  onSaveColumnOptions={handleSaveColumnOptions}
+                />
+                <div className="border-t border-[--color-border] p-4">
+                  {/* Statistics panel */}
+                </div>
+              </div>
             )}
           </ScrollAreaPrimitive.Viewport>
           <ScrollBar orientation="vertical" />

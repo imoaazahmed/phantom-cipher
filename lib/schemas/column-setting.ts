@@ -5,7 +5,7 @@ export const columnSettingSchema = yup.object({
   name: yup.string().trim().required('validation.columnSetting.nameRequired'),
   description: yup.string().trim().optional().default(''),
   format_type: yup
-    .mixed<(typeof FORMAT_TYPES)[number]>()
+    .string()
     .oneOf([...FORMAT_TYPES])
     .default('auto'),
 })

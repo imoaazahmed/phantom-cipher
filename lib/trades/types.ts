@@ -62,7 +62,16 @@ export type TradePreview = {
   realised_loss: number | null
 }
 
-export const FORMAT_TYPES = ['auto', 'text', 'currency', 'number', 'percent', 'date', 'time'] as const
+export type ColumnOption = {
+  id: string
+  column_id: string
+  value: string
+  label: string
+  position: number
+  created_at: string
+}
+
+export const FORMAT_TYPES = ['auto', 'text', 'currency', 'number', 'percent', 'date', 'time', 'dropdown'] as const
 export type FormatType = (typeof FORMAT_TYPES)[number]
 
 export type ColumnSetting = {

@@ -189,6 +189,7 @@
       "namePlaceholder": "e.g. Notes",
       "descriptionLabel": "Description",
       "descriptionPlaceholder": "Optional. Shown in the column header tooltip.",
+      "cellTypeLabel": "Cell Type",
       "formatLabel": "Format",
       "formatAuto": "Automatic",
       "formatText": "Text",
@@ -197,11 +198,38 @@
       "formatDate": "Date",
       "formatTime": "Time",
       "formatNumber": "Number",
+      "formatDropdown": "Dropdown",
+      "addOption": "Add Item",
       "save": "Add Column",
       "editTitle": "Edit Column",
       "saveEdit": "Save Changes",
-      "noDescriptionHint": "Add a description to this column to show in the tooltip"
+      "noDescriptionHint": "Add a description to this column to show in the tooltip",
+      "builtInAlert": "This is a built-in column. Its name, description, and cell type are locked and cannot be changed.",
+      "builtInLockedItemsAlert": "This is a built-in column. You can only reorder the items — adding, renaming, and deleting are not allowed.",
+      "dangerZone": "Danger Zone",
+      "hideColumnLabel": "Hide column",
+      "hideColumnDescription": "The column will be hidden from the table. You can show it again at any time from the Columns Manager.",
+      "deleteColumnLabel": "Delete column",
+      "deleteColumnDescription": "This action cannot be undone. All values stored in this column will be permanently deleted."
     },
+    "columnOptions": {
+      "title": "{{column}} Options",
+      "addPlaceholder": "New option…",
+      "save": "Save",
+      "editOption": "Rename option",
+      "deleteOption": "Delete option",
+      "dragHandle": "Drag to reorder",
+      "confirmEdit": "Confirm",
+      "cancelEdit": "Cancel"
+    },
+    "cell": {
+      "readOnly": "This cell is auto-generated and cannot be edited",
+      "yesterday": "Yesterday",
+      "today": "Today",
+      "tomorrow": "Tomorrow",
+      "startTime": "Start Time"
+    },
+    "addTrade": "Add Trade",
     "patches": {
       "newTitle": "New Patch",
       "renameTitle": "Rename Patch",
