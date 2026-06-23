@@ -1,50 +1,70 @@
 // lib/trades/calculations.ts
-import type { RawTrade, EnrichedTrade, TradePreview } from './types'
+import type { RawTrade, EnrichedTrade, FormulaColumn, FormulaRow, TradePreview } from './types'
 
 export function deriveDirection(avg_entry: number, stop_loss: number): 'long' | 'short' {
   return avg_entry > stop_loss ? 'long' : 'short'
 }
 
-export function enrichTrades(trades: RawTrade[]): EnrichedTrade[] {
-  let cumulative_pnl = 0
-  let cumulative_r = 0
+export function enrichTrades(
+  trades: RawTrade[],
+  formulaColumns: FormulaColumn[] = []
+): EnrichedTrade[] {
+  let running_pnl = 0
+  let running_r = 0
 
   return trades.map((trade, index) => {
-    let pnl: number | null
-    let r_multiple: number | null
-    if (trade.realised_win !== null) {
-      pnl = trade.realised_win
-      r_multiple = trade.risk !== 0 ? pnl / trade.risk : 0
-    } else if (trade.realised_loss !== null) {
-      pnl = -trade.realised_loss
-      r_multiple = trade.risk !== 0 ? pnl / trade.risk : 0
-    } else {
-      pnl = null
-      r_multiple = null
-    }
-    const realised_win = trade.realised_win
-    const realised_loss = trade.realised_loss
-    // Deviation: only meaningful when user manually entered a realised_loss that exceeded planned risk
-    const rawDeviation = trade.realised_loss !== null ? (trade.realised_loss - trade.risk) / trade.risk * 100 : null
-    const deviation = rawDeviation !== null && rawDeviation > 0 ? rawDeviation : null
     const prev = index > 0 ? trades[index - 1] : null
-    const risk_volatility =
-      prev !== null ? (trade.risk - prev.risk) / prev.risk * 100 : null
+    const pnl: number | null =
+      trade.realised_win != null
+        ? trade.realised_win
+        : trade.realised_loss != null
+        ? -trade.realised_loss
+        : null
 
-    cumulative_pnl += pnl ?? 0
-    cumulative_r += r_multiple ?? 0
-
-    return {
-      ...trade,
-      r_multiple,
+    const primitives = {
       pnl,
-      realised_win,
-      realised_loss,
-      deviation,
-      risk_volatility,
-      cumulative_pnl: pnl !== null ? cumulative_pnl : null,
-      cumulative_r: r_multiple !== null ? cumulative_r : null,
+      prev_risk: prev?.risk ?? null,
+      running_pnl,   // sum of pnl of all rows BEFORE this one
+      running_r,     // sum of r_multiple of all rows BEFORE this one
+      row_index: index,
     }
+
+    const formulaRow: FormulaRow = {
+      avg_entry: trade.avg_entry,
+      avg_exit: trade.avg_exit,
+      stop_loss: trade.stop_loss,
+      risk: trade.risk,
+      realised_win: trade.realised_win,
+      realised_loss: trade.realised_loss,
+      direction: trade.direction,
+      ticker: trade.ticker,
+      trade_date: trade.trade_date,
+      trade_time: trade.trade_time,
+      rules_followed: trade.rules_followed,
+      setup_type: trade.setup_type,
+      trade_number: trade.trade_number,
+      ...primitives,
+    }
+
+    const newCustomData: Record<string, string> = { ...(trade.custom_data ?? {}) }
+
+    for (const col of formulaColumns) {
+      try {
+        const result = col.fn(formulaRow)
+        if (result != null) {
+          newCustomData[col.columnId] = String(result)
+          ;(formulaRow as Record<string, unknown>)[col.formulaId] = result
+        }
+      } catch {
+        // formula error → cell shows blank; never crash the page
+      }
+    }
+
+    // Accumulate running totals using formula engine results
+    running_pnl += pnl ?? 0
+    running_r += typeof formulaRow['r_multiple'] === 'number' ? formulaRow['r_multiple'] : 0
+
+    return { ...trade, ...primitives, custom_data: newCustomData }
   })
 }
 
