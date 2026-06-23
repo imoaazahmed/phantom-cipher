@@ -61,14 +61,23 @@ export function ColumnsDialog({ columnVisibility, onVisibilityChange, onShowAll,
           <DialogTitle>{t('trades.columns.manageColumns')}</DialogTitle>
         </DialogHeader>
 
-        <div className="relative">
-          <Search className="pointer-events-none absolute inset-s-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={t('trades.columns.searchPlaceholder')}
-            className="ps-9"
-          />
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute inset-s-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t('trades.columns.searchPlaceholder')}
+              className="ps-9"
+            />
+          </div>
+          <Button variant="outline" size="sm" onClick={onShowAll}>
+            {t('trades.columns.showAll')}
+          </Button>
+          <Button size="sm" onClick={() => setAddColumnOpen(true)}>
+            <Plus className="size-4" />
+            {t('trades.columns.addColumn')}
+          </Button>
         </div>
 
         <ScrollArea className="max-h-96">
@@ -177,15 +186,6 @@ export function ColumnsDialog({ columnVisibility, onVisibilityChange, onShowAll,
           </div>
         </div>
 
-        <div className="flex gap-2">
-          <Button variant="outline" className="flex-1" onClick={onShowAll}>
-            {t('trades.columns.showAll')}
-          </Button>
-          <Button className="flex-1" onClick={() => setAddColumnOpen(true)}>
-            <Plus className="size-4" />
-            {t('trades.columns.addColumn')}
-          </Button>
-        </div>
       </DialogContent>
       <AddColumnDialog open={addColumnOpen} onOpenChange={setAddColumnOpen} />
     </Dialog>

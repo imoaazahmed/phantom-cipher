@@ -43,6 +43,7 @@ export function resolveColumnOrder(
 }
 
 export const REQUIRED_COLUMNS = new Set([
+  'trade_number',
   'trade_date',
   'trade_time',
   'avg_entry',

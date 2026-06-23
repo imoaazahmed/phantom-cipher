@@ -106,6 +106,7 @@ create table public.trades (
   user_id uuid references auth.users(id) on delete cascade not null,
   patch_id uuid references public.patches(id) on delete cascade not null,
   trade_number int not null,
+  sort_order float8 not null default 0,
   trade_date date not null,
   trade_time time not null,
   ticker text not null,
@@ -144,6 +145,7 @@ create policy "Users can delete their own trades"
 create index trades_user_id_idx on public.trades (user_id);
 create index trades_patch_id_idx on public.trades (patch_id);
 create index trades_patch_trade_number_idx on public.trades (patch_id, trade_number);
+create index trades_sort_order_idx on public.trades (patch_id, sort_order);
 create index trades_trade_date_idx on public.trades (trade_date desc);
 ```
 

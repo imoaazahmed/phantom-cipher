@@ -11,6 +11,7 @@ import { ScrollBar } from "@/components/ui/scroll-area"
 import { PatchTabs, type PatchTabsHandle } from "./patch-tabs"
 import { TradesTable } from "./trades-table"
 import { ColumnsDialog } from "./columns-dialog"
+import { AddColumnDialog } from "./add-column-dialog"
 import {
   Empty,
   EmptyHeader,
@@ -34,6 +35,7 @@ import {
   createDraftTrade,
   patchTrade,
   deleteTrade,
+  duplicateTrade,
 } from "@/lib/trades/actions"
 import { DEFAULT_MENU_OPTIONS } from "@/lib/trades/column-options"
 import type { Patch, RawTrade, TradeFormData, ColumnSetting } from "@/lib/trades/types"
@@ -99,6 +101,7 @@ export function TradesClient({ patches: initialPatches, columnSettings, savedCol
   const scrollMemory = useRef<Map<string, { left: number; top: number }>>(new Map())
   const [scrolledX, setScrolledX] = useState(false)
   const [scrolledY, setScrolledY] = useState(false)
+  const [addColumnOpen, setAddColumnOpen] = useState(false)
   const [tradeCache, setTradeCache] = useState<Map<string, RawTrade[]>>(new Map())
   const [draftTradeCache, setDraftTradeCache] = useState<Map<string, RawTrade[]>>(new Map())
   const [loadingTrades, setLoadingTrades] = useState(false)
@@ -305,8 +308,8 @@ export function TradesClient({ patches: initialPatches, columnSettings, savedCol
     }
   }
 
-  async function handleCreateTrade(): Promise<RawTrade | null> {
-    const { data } = await createDraftTrade(activePatchId)
+  async function handleCreateTrade(sortOrder?: number): Promise<RawTrade | null> {
+    const { data } = await createDraftTrade(activePatchId, sortOrder)
     if (data) {
       setDraftTradeCache((prev) => {
         const current = prev.get(activePatchId) ?? []
@@ -370,6 +373,17 @@ export function TradesClient({ patches: initialPatches, columnSettings, savedCol
     _trackWrite(pId, refresh)
   }
 
+  async function handleDuplicateTrade(tradeId: string) {
+    const pId = activePatchId
+    const { data } = await duplicateTrade(tradeId)
+    if (data) {
+      setTradeCache((prev) => {
+        const current = prev.get(pId) ?? []
+        return new Map(prev).set(pId, [...current, data])
+      })
+    }
+  }
+
   async function handleSaveColumnOptions(columnId: string, options: { value: string; label: string }[]) {
     const { error } = await saveColumnOptions(columnId, options)
     if (!error) {
@@ -399,15 +413,25 @@ export function TradesClient({ patches: initialPatches, columnSettings, savedCol
       {activePatch && !noPatches && !allHidden && (
         <div className="flex items-center justify-between px-4 py-1.5">
           <h1 className="text-sm font-semibold">{activePatch.name}</h1>
-          <ColumnsDialog
-            columnVisibility={columnVisibility}
-            onVisibilityChange={handleVisibilityChange}
-            onShowAll={handleShowAll}
-            columnSettings={columnSettings}
-            visibilityScope={visibilityScope}
-            onVisibilityScopeChange={handleVisibilityScopeChange}
-            orderScope={orderScope}
-            onOrderScopeChange={handleOrderScopeChange}
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => setAddColumnOpen(true)}>
+              <Plus className="size-4" />
+              {t('trades.columns.addColumn')}
+            </Button>
+            <ColumnsDialog
+              columnVisibility={columnVisibility}
+              onVisibilityChange={handleVisibilityChange}
+              onShowAll={handleShowAll}
+              columnSettings={columnSettings}
+              visibilityScope={visibilityScope}
+              onVisibilityScopeChange={handleVisibilityScopeChange}
+              orderScope={orderScope}
+              onOrderScopeChange={handleOrderScopeChange}
+            />
+          </div>
+          <AddColumnDialog
+            open={addColumnOpen}
+            onOpenChange={setAddColumnOpen}
           />
         </div>
       )}
@@ -466,6 +490,7 @@ export function TradesClient({ patches: initialPatches, columnSettings, savedCol
                   onCreateTrade={handleCreateTrade}
                   onPatchTrade={handlePatchTrade}
                   onDeleteTrade={handleDeleteTrade}
+                  onDuplicateTrade={handleDuplicateTrade}
                 />
                 <div className="border-t border-[--color-border] p-4">
                   {/* Statistics panel */}

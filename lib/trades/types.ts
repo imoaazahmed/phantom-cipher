@@ -16,6 +16,7 @@ export type RawTrade = {
   id: string
   patch_id: string
   trade_number: number
+  sort_order: number
   trade_date: string       // "YYYY-MM-DD"
   trade_time: string       // "HH:MM:SS"
   ticker: string

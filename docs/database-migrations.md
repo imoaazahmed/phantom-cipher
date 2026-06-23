@@ -261,3 +261,15 @@ alter table public.trades
   add column if not exists realised_win numeric(12, 2) null,
   add column if not exists realised_loss numeric(12, 2) null;
 ```
+
+---
+
+## 2026-06-23 — Add sort_order to trades
+
+Enables position-aware row insertion (Insert Trade Before / After). Existing rows get `sort_order = trade_number` so current order is preserved. All trade queries now `ORDER BY sort_order` instead of `trade_number`.
+
+```sql
+ALTER TABLE public.trades ADD COLUMN sort_order float8 NOT NULL DEFAULT 0;
+UPDATE public.trades SET sort_order = trade_number;
+CREATE INDEX trades_sort_order_idx ON public.trades (patch_id, sort_order);
+```

@@ -147,7 +147,7 @@ export async function getPatchTrades(
     .eq('patch_id', patchId)
     .eq('user_id', user.id)
     .neq('is_draft', true)
-    .order('trade_number', { ascending: true })
+    .order('sort_order', { ascending: true })
 
   if (error) return { data: [], error: 'errors.generic' }
   return { data: (data ?? []) as RawTrade[], error: null }
@@ -166,14 +166,15 @@ export async function getPatchDraftTrades(
     .eq('patch_id', patchId)
     .eq('user_id', user.id)
     .eq('is_draft', true)
-    .order('trade_number', { ascending: true })
+    .order('sort_order', { ascending: true })
 
   if (error) return { data: [], error: 'errors.generic' }
   return { data: (data ?? []) as RawTrade[], error: null }
 }
 
 export async function createDraftTrade(
-  patchId: string
+  patchId: string,
+  sortOrder?: number,
 ): Promise<{ data: RawTrade | null; error: string | null }> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -181,12 +182,15 @@ export async function createDraftTrade(
 
   const { data: existing } = await supabase
     .from('trades')
-    .select('trade_number')
+    .select('trade_number, sort_order')
     .eq('patch_id', patchId)
     .order('trade_number', { ascending: false })
     .limit(1)
 
   const nextNumber = existing && existing.length > 0 ? existing[0].trade_number + 1 : 1
+  const maxSortOrder = existing && existing.length > 0 ? (existing[0].sort_order as number) : 0
+  const resolvedSortOrder = sortOrder ?? maxSortOrder + 1.0
+
   const now = new Date()
   const trade_date = now.toISOString().split('T')[0]
   const trade_time = now.toTimeString().slice(0, 8)
@@ -197,6 +201,7 @@ export async function createDraftTrade(
       user_id: user.id,
       patch_id: patchId,
       trade_number: nextNumber,
+      sort_order: resolvedSortOrder,
       trade_date,
       trade_time,
       ticker: '',
@@ -308,6 +313,41 @@ export async function deleteTrade(tradeId: string): Promise<{ error: string | nu
   if (error) return { error: 'errors.generic' }
   revalidatePath('/trades')
   return { error: null }
+}
+
+export async function duplicateTrade(tradeId: string): Promise<{ data: RawTrade | null; error: string | null }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { data: null, error: 'errors.unauthorized' }
+
+  const { data: source } = await supabase
+    .from('trades')
+    .select('*')
+    .eq('id', tradeId)
+    .eq('user_id', user.id)
+    .single()
+
+  if (!source) return { data: null, error: 'errors.generic' }
+
+  const { data: existing } = await supabase
+    .from('trades')
+    .select('trade_number')
+    .eq('patch_id', source.patch_id)
+    .order('trade_number', { ascending: false })
+    .limit(1)
+
+  const nextNumber = existing && existing.length > 0 ? existing[0].trade_number + 1 : 1
+
+  const { id: _id, created_at: _ca, updated_at: _ua, trade_number: _tn, ...rest } = source
+  const { data, error } = await supabase
+    .from('trades')
+    .insert({ ...rest, trade_number: nextNumber, user_id: user.id })
+    .select()
+    .single()
+
+  if (error) return { data: null, error: 'errors.generic' }
+  revalidatePath('/trades')
+  return { data: data as RawTrade, error: null }
 }
 
 export async function getColumnSettings(): Promise<ColumnSetting[]> {
