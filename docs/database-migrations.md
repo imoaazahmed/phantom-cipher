@@ -273,3 +273,196 @@ ALTER TABLE public.trades ADD COLUMN sort_order float8 NOT NULL DEFAULT 0;
 UPDATE public.trades SET sort_order = trade_number;
 CREATE INDEX trades_sort_order_idx ON public.trades (patch_id, sort_order);
 ```
+
+---
+
+## 2026-06-23 — Formula columns in column_settings
+
+Adds formula support to `column_settings`. Built-in formula columns (direction, r_multiple, etc.) are stored as rows with `user_id = NULL`, giving the app a single formula engine for all columns.
+
+### Step 1: Schema changes
+
+```sql
+-- Allow user_id to be null so built-in rows can exist without an owner
+ALTER TABLE public.column_settings ALTER COLUMN user_id DROP NOT NULL;
+
+-- Formula fields
+ALTER TABLE public.column_settings
+  ADD COLUMN IF NOT EXISTS is_formula boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS formula   text NULL,
+  ADD COLUMN IF NOT EXISTS formula_id text NULL;
+
+-- One built-in row per column_id (NULL != NULL in unique constraints, so a partial index is needed)
+CREATE UNIQUE INDEX IF NOT EXISTS column_settings_builtin_column_id_idx
+  ON public.column_settings (column_id)
+  WHERE user_id IS NULL;
+
+-- formula_id must be globally unique across all users and built-ins (NULLs are excluded automatically)
+CREATE UNIQUE INDEX IF NOT EXISTS column_settings_formula_id_idx
+  ON public.column_settings (formula_id)
+  WHERE formula_id IS NOT NULL;
+```
+
+### Step 2: Split RLS policies
+
+The old "for all" policy only allowed users to see their own rows. Replace it so users can also read the built-in rows (`user_id IS NULL`).
+
+```sql
+DROP POLICY IF EXISTS "Users can manage their own column settings" ON public.column_settings;
+
+CREATE POLICY "Users can view their column settings and built-ins"
+  ON public.column_settings FOR SELECT
+  USING (auth.uid() = user_id OR user_id IS NULL);
+
+CREATE POLICY "Users can insert their own column settings"
+  ON public.column_settings FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update their own column settings"
+  ON public.column_settings FOR UPDATE
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete their own column settings"
+  ON public.column_settings FOR DELETE
+  USING (auth.uid() = user_id);
+```
+
+### Step 3: Insert built-in formula rows
+
+```sql
+INSERT INTO public.column_settings
+  (user_id, column_id, name, description, format_type, is_formula, formula_id, formula)
+VALUES
+  (NULL, 'direction', 'Direction',
+   'Long or short, derived from avg entry vs stop loss.',
+   'auto', true, 'direction',
+   'if (!avg_entry || !stop_loss) return null;
+return avg_entry > stop_loss ? ''long'' : ''short'';'),
+
+  (NULL, 'r_multiple', 'R+/-',
+   'Profit or loss in R multiples. Max possible loss should be 1R.',
+   'auto', true, 'r_multiple',
+   'if (pnl == null || !risk) return null;
+return pnl / risk;'),
+
+  (NULL, 'deviation', 'Deviation',
+   'How much your Realised Loss exceeded your Risk due to slippage. 0% means you lost exactly your risk amount.',
+   'percent', true, 'deviation',
+   'if (realised_loss == null || !risk) return null;
+return ((realised_loss - risk) / risk) * 100;'),
+
+  (NULL, 'risk_volatility', 'Risk Volatility',
+   'Tracks trade-to-trade risk scaling consistency.',
+   'percent', true, 'risk_volatility',
+   'if (prev_risk == null || !risk) return null;
+return ((risk - prev_risk) / prev_risk) * 100;'),
+
+  (NULL, 'cumulative_pnl', 'Cumulative PnL $',
+   'Total profit or loss in USD$ up to this trade.',
+   'currency', true, 'cumulative_pnl',
+   'return running_pnl + (pnl ?? 0);'),
+
+  (NULL, 'cumulative_r', 'Cumulative R',
+   'Total profit or loss in R multiples up to this trade.',
+   'auto', true, 'cumulative_r',
+   'const rm = typeof rest.r_multiple === ''number'' ? rest.r_multiple : 0;
+return running_r + rm;')
+
+ON CONFLICT (column_id) WHERE user_id IS NULL DO NOTHING;
+```
+
+---
+
+## 2026-06-23 — delete_column_data function
+
+Cleans up all traces of a custom column when it is deleted: removes its key from `custom_data` in every trade, strips it from `column_order` arrays, and removes it from `column_visibility` objects across all patches.
+
+```sql
+CREATE OR REPLACE FUNCTION public.delete_column_data(p_column_id text)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  -- Remove column values from every trade owned by the calling user
+  UPDATE public.trades
+  SET custom_data = custom_data - p_column_id
+  WHERE user_id = auth.uid()
+    AND custom_data ? p_column_id;
+
+  -- Remove column from column_order arrays in patches
+  UPDATE public.patches
+  SET column_order = (
+    SELECT jsonb_agg(elem)
+    FROM jsonb_array_elements_text(column_order) AS elem
+    WHERE elem <> p_column_id
+  )
+  WHERE user_id = auth.uid()
+    AND column_order IS NOT NULL
+    AND column_order @> to_jsonb(p_column_id);
+
+  -- Remove column from column_visibility objects in patches
+  UPDATE public.patches
+  SET column_visibility = column_visibility - p_column_id
+  WHERE user_id = auth.uid()
+    AND column_visibility ? p_column_id;
+END;
+$$;
+```
+
+---
+
+## 2026-06-23 — Unify column_id and formula_id for custom columns
+
+Custom columns now use the user's slug (e.g. `fees`) as `column_id` directly instead of `custom_<uuid>`. This migration renames existing UUID-based column IDs to match their `formula_id`.
+
+Run once in the Supabase SQL editor (as `postgres` role so RLS is bypassed):
+
+```sql
+DO $$
+DECLARE
+  col RECORD;
+BEGIN
+  FOR col IN
+    SELECT column_id, formula_id
+    FROM public.column_settings
+    WHERE user_id IS NOT NULL
+      AND formula_id IS NOT NULL
+      AND column_id <> formula_id
+  LOOP
+    -- Rename key in trades.custom_data
+    UPDATE public.trades
+    SET custom_data = (custom_data - col.column_id)
+      || jsonb_build_object(col.formula_id, custom_data -> col.column_id)
+    WHERE custom_data ? col.column_id;
+
+    -- Rename entry in patches.column_order
+    UPDATE public.patches
+    SET column_order = (
+      SELECT jsonb_agg(
+        CASE WHEN elem::text = col.column_id THEN to_jsonb(col.formula_id) ELSE elem END
+      )
+      FROM jsonb_array_elements(column_order) AS elem
+    )
+    WHERE column_order IS NOT NULL
+      AND column_order @> to_jsonb(col.column_id);
+
+    -- Rename key in patches.column_visibility
+    UPDATE public.patches
+    SET column_visibility = (column_visibility - col.column_id)
+      || jsonb_build_object(col.formula_id, column_visibility -> col.column_id)
+    WHERE column_visibility ? col.column_id;
+
+    -- Finally update column_settings.column_id
+    UPDATE public.column_settings
+    SET column_id = col.formula_id
+    WHERE column_id = col.column_id;
+  END LOOP;
+END;
+$$;
+```
+
+After running the above, drop the now-redundant column:
+
+```sql
+ALTER TABLE public.column_settings DROP COLUMN IF EXISTS formula_id;
+```

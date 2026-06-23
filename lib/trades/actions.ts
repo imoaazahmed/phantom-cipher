@@ -382,23 +382,27 @@ export async function createColumnSetting(input: {
   format_type: FormatType
   is_formula?: boolean
   formula?: string | null
-  formula_id?: string | null
+  column_id: string
 }): Promise<{ data: ColumnSetting | null; error: string | null }> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { data: null, error: 'errors.unauthorized' }
 
-  if (input.formula_id) {
-    const { data: existing } = await supabase
-      .from('column_settings')
-      .select('id')
-      .eq('formula_id', input.formula_id)
-      .limit(1)
-    if (existing && existing.length > 0)
-      return { data: null, error: 'trades.formula.errorVariableIdTaken' }
-  }
+  if (!input.column_id)
+    return { data: null, error: 'trades.formula.errorVariableIdRequired' }
 
-  const column_id = `custom_${crypto.randomUUID()}`
+  const column_id = input.column_id.trim()
+
+  if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(column_id))
+    return { data: null, error: 'trades.formula.errorVariableIdFormat' }
+
+  const { data: taken } = await supabase
+    .from('column_settings')
+    .select('id')
+    .eq('column_id', column_id)
+    .limit(1)
+  if (taken && taken.length > 0)
+    return { data: null, error: 'trades.formula.errorVariableIdTaken' }
 
   const { data, error } = await supabase
     .from('column_settings')
@@ -410,7 +414,6 @@ export async function createColumnSetting(input: {
       format_type: input.format_type,
       is_formula: input.is_formula ?? false,
       formula: input.formula ?? null,
-      formula_id: input.formula_id ?? null,
     })
     .select()
     .single()
@@ -428,23 +431,11 @@ export async function updateColumnSetting(
     format_type: FormatType
     is_formula?: boolean
     formula?: string | null
-    formula_id?: string | null
   }
 ): Promise<{ error: string | null }> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'errors.unauthorized' }
-
-  // Fetch existing row to enforce formula_id immutability
-  const { data: existing } = await supabase
-    .from('column_settings')
-    .select('formula_id')
-    .eq('column_id', columnId)
-    .eq('user_id', user.id)
-    .single()
-
-  // formula_id is immutable once set — ignore any new value if already saved
-  const formula_id = existing?.formula_id ?? input.formula_id ?? null
 
   const { error } = await supabase
     .from('column_settings')
@@ -454,7 +445,6 @@ export async function updateColumnSetting(
       format_type: input.format_type,
       is_formula: input.is_formula ?? false,
       formula: input.formula ?? null,
-      formula_id,
       updated_at: new Date().toISOString(),
     })
     .eq('column_id', columnId)
@@ -501,6 +491,10 @@ export async function deleteColumnSetting(columnId: string): Promise<{ error: st
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'errors.unauthorized' }
+
+  // Clean up column data from trades and patch metadata before removing the setting
+  const { error: cleanupError } = await supabase.rpc('delete_column_data', { p_column_id: columnId })
+  if (cleanupError) return { error: 'errors.generic' }
 
   const { error } = await supabase
     .from('column_settings')

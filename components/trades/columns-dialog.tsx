@@ -38,7 +38,7 @@ export function ColumnsDialog({ columnVisibility, onVisibilityChange, onShowAll,
   const [search, setSearch] = useState('')
   const [addColumnOpen, setAddColumnOpen] = useState(false)
 
-  const customColumns = columnSettings.filter((s) => s.column_id.startsWith('custom_'))
+  const customColumns = columnSettings.filter((s) => s.user_id !== null)
 
   const query = search.trim().toLowerCase()
   const filtered = DEFAULT_COLUMN_ORDER.filter((id) => {

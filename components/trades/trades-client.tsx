@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useQueryState } from "nuqs"
 import { useTranslation } from "react-i18next"
 import { ChartCandlestick, Plus } from "lucide-react"
@@ -21,6 +21,7 @@ import {
   EmptyContent,
 } from "@/components/ui/empty"
 import { enrichTrades } from "@/lib/trades/calculations"
+import { compileFormula, topoSort } from "@/lib/trades/formula-engine"
 import { DEFAULT_COLUMN_ORDER } from "@/lib/trades/column-order"
 import {
   createPatch,
@@ -38,7 +39,7 @@ import {
   duplicateTrade,
 } from "@/lib/trades/actions"
 import { DEFAULT_MENU_OPTIONS } from "@/lib/trades/column-options"
-import type { Patch, RawTrade, TradeFormData, ColumnSetting } from "@/lib/trades/types"
+import type { Patch, RawTrade, TradeFormData, ColumnSetting, FormulaColumn } from "@/lib/trades/types"
 
 // Module-level: persists across component mounts/unmounts so in-flight writes
 // survive a navigation that unmounts and remounts TradesClient, preventing a
@@ -377,10 +378,17 @@ export function TradesClient({ patches: initialPatches, columnSettings, savedCol
     const pId = activePatchId
     const { data } = await duplicateTrade(tradeId)
     if (data) {
-      setTradeCache((prev) => {
-        const current = prev.get(pId) ?? []
-        return new Map(prev).set(pId, [...current, data])
-      })
+      if (data.is_draft) {
+        setDraftTradeCache((prev) => {
+          const current = prev.get(pId) ?? []
+          return new Map(prev).set(pId, [...current, data])
+        })
+      } else {
+        setTradeCache((prev) => {
+          const current = prev.get(pId) ?? []
+          return new Map(prev).set(pId, [...current, data])
+        })
+      }
     }
   }
 
@@ -401,9 +409,18 @@ export function TradesClient({ patches: initialPatches, columnSettings, savedCol
     )
   }
 
+  const formulaColumns = useMemo<FormulaColumn[]>(() => {
+    const sorted = topoSort(columnSettings.filter((s) => s.is_formula && s.formula))
+    return sorted.map((s) => ({
+      columnId: s.column_id,
+      formulaId: s.column_id,
+      fn: compileFormula(s.formula!),
+    }))
+  }, [columnSettings])
+
   const rawTrades = tradeCache.get(activePatchId) ?? []
   const draftTrades = draftTradeCache.get(activePatchId) ?? []
-  const enriched = enrichTrades(rawTrades)
+  const enriched = enrichTrades(rawTrades, formulaColumns)
   const allHidden = patches.length > 0 && patches.every((p) => p.is_hidden)
   const noPatches = patches.length === 0
   const activePatch = patches.find((p) => p.id === activePatchId)
@@ -432,6 +449,7 @@ export function TradesClient({ patches: initialPatches, columnSettings, savedCol
           <AddColumnDialog
             open={addColumnOpen}
             onOpenChange={setAddColumnOpen}
+            existingFormulaIds={columnSettings.map(s => s.column_id)}
           />
         </div>
       )}
@@ -486,6 +504,7 @@ export function TradesClient({ patches: initialPatches, columnSettings, savedCol
                   columnSettings={columnSettings}
                   columnOptions={columnOptions}
                   onSaveColumnOptions={handleSaveColumnOptions}
+                  formulaColumns={formulaColumns}
                   initialDraftTrades={draftTrades}
                   onCreateTrade={handleCreateTrade}
                   onPatchTrade={handlePatchTrade}

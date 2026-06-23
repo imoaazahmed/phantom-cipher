@@ -49,6 +49,7 @@ export type EnrichedTrade = RawTrade & {
 
 // The parameter object destructured inside every formula function body.
 export type FormulaRow = {
+  // Raw trade fields
   avg_entry: number
   avg_exit: number
   stop_loss: number
@@ -56,12 +57,14 @@ export type FormulaRow = {
   realised_win: number | null
   realised_loss: number | null
   direction: 'long' | 'short'
+  order_type: 'market' | 'limit'
   ticker: string
   trade_date: string
   trade_time: string
   rules_followed: boolean
   setup_type: string
   trade_number: number
+  // Computed primitives
   pnl: number | null
   prev_risk: number | null
   running_pnl: number
@@ -115,13 +118,13 @@ export type FormatType = (typeof FORMAT_TYPES)[number]
 
 export type ColumnSetting = {
   id: string
+  user_id: string | null
   column_id: string
   name: string
   description: string | null
   format_type: FormatType
   is_formula: boolean
   formula: string | null
-  formula_id: string | null
   created_at: string
   updated_at: string
 }

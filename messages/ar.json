@@ -189,7 +189,7 @@
     "deleteColumnDialog": {
       "title": "حذف \"{{name}}\"؟",
       "description": "سيؤدي هذا إلى إزالة العمود وجميع إعداداته بشكل دائم. لا يمكن التراجع عن هذا الإجراء.",
-      "hint": "فكّر في إخفاء العمود بدلاً من ذلك — يمكنك إظهاره مرة أخرى في أي وقت.",
+      "hint": "فكّر في إخفاء العمود بدلاً من ذلك، يمكنك إظهاره مرة أخرى في أي وقت.",
       "hide": "إخفاء بدلاً من ذلك",
       "confirm": "حذف العمود"
     },
@@ -216,13 +216,34 @@
       "editTitle": "تعديل العمود",
       "saveEdit": "حفظ التغييرات",
       "noDescriptionHint": "أضف وصفاً لهذا العمود لعرضه في تلميح الأداة",
-      "builtInAlert": "هذا عمود مدمج. اسمه ووصفه ونوع خليته مقفلة ولا يمكن تغييرها.",
-      "builtInLockedItemsAlert": "هذا عمود مدمج. يمكنك فقط إعادة ترتيب العناصر — الإضافة والتسمية والحذف غير مسموح بها.",
+      "builtInAlert": "هذا عمود مدمج. بعض المدخلات لا يمكن تغييرها.",
       "dangerZone": "منطقة الخطر",
       "hideColumnLabel": "إخفاء العمود",
       "hideColumnDescription": "سيُخفى العمود من الجدول. يمكنك إظهاره في أي وقت من مدير الأعمدة.",
       "deleteColumnLabel": "حذف العمود",
-      "deleteColumnDescription": "لا يمكن التراجع عن هذا الإجراء. ستُحذف جميع القيم المخزنة في هذا العمود نهائياً."
+      "deleteColumnDescription": "لا يمكن التراجع عن هذا الإجراء. ستُحذف جميع القيم المخزنة في هذا العمود نهائياً.",
+      "autoCalculateLabel": "احتساب تلقائي",
+      "autoCalculateDescription": "اجعل قيمة هذا العمود محسوبة بواسطة معادلة JavaScript.",
+      "formulaLabel": "المعادلة",
+      "variableIdLabel": "معرّف العمود",
+      "variableIdPlaceholder": "مثال: my_custom_column_id",
+      "variableIdHint": "استخدم هذا المعرّف للإشارة إلى هذا العمود في معادلات أخرى. لا يمكن تغييره بعد الحفظ.",
+      "variableIdTooltip": "معرّف فريد لهذا العمود. استخدمه للإشارة إلى قيمة هذا العمود داخل معادلات الأعمدة الأخرى (مثال: rest.my_column_id).",
+      "variableIdAvailable": "معرّف العمود متاح.",
+      "variableIdLockWarning": "لن تتمكن من تغييره بعد الحفظ، لاستخدام معرّف مختلف يجب حذف هذا العمود وإنشاء عمود جديد.",
+      "generateIdButton": "توليد",
+      "formulaBuiltInHint": "هذا عمود معادلة مدمج. يمكنك عرض المعادلة لكن لا يمكن تعديلها.",
+      "viewFormulaButton": "فتح محرر المعادلة",
+      "editFormulaButton": "فتح محرر المعادلة",
+      "discardFormulaTitle": "تجاهل تغييرات المعادلة؟",
+      "discardFormulaDescription": "لقد عدّلت المعادلة لكنك لم تحفظ العمود. ستُفقد تغييراتك.",
+      "discardFormulaKeep": "الاستمرار في التعديل",
+      "discardFormulaConfirm": "تجاهل"
+    },
+    "formula": {
+      "errorVariableIdRequired": "معرّف العمود مطلوب",
+      "errorVariableIdFormat": "يجب أن يبدأ بحرف أو شرطة سفلية ويحتوي فقط على حروف أو أرقام أو شرطات سفلية",
+      "errorVariableIdTaken": "معرّف العمود هذا مستخدم بالفعل. عدّله، غيّر اسم العمود، أو اضغط توليد."
     },
     "columnOptions": {
       "title": "خيارات {{column}}",

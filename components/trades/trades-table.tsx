@@ -34,7 +34,7 @@ import {
   Pencil,
   Plus,
   Settings2,
-  SquareFunction,
+  Code2,
   Trash2,
   X,
 } from "lucide-react"
@@ -98,8 +98,9 @@ import type {
   TradeFormData,
   ColumnSetting,
   FormatType,
+  FormulaColumn,
 } from "@/lib/trades/types"
-import { enrichTrades } from "@/lib/trades/calculations"
+import { enrichTrades, deriveDirection } from "@/lib/trades/calculations"
 import {
   PINNED_COLUMN,
   DEFAULT_COLUMN_ORDER,
@@ -128,6 +129,7 @@ type Props = {
     columnId: string,
     options: { value: string; label: string }[]
   ) => Promise<void>
+  formulaColumns?: FormulaColumn[]
   initialDraftTrades?: RawTrade[]
   onCreateTrade: (sortOrder?: number) => Promise<RawTrade | null>
   onPatchTrade: (tradeId: string, fields: Partial<TradeFormData>) => void
@@ -178,13 +180,27 @@ function fmtTime(timeStr: string, use24h = false): string {
   return `${String(h12).padStart(2, "0")}:${mStr} ${ampm}`
 }
 
+function fmtCustomCell(raw: string, formatType?: FormatType | null): string {
+  if (!formatType || formatType === 'auto' || formatType === 'text' || formatType === 'dropdown') return raw
+  const n = parseFloat(raw)
+  if (formatType === 'currency') return isNaN(n) ? raw : fmtCurrency(n)
+  if (formatType === 'percent') return isNaN(n) ? raw : fmtPercent(n)
+  if (formatType === 'number') return isNaN(n) ? raw : n.toLocaleString()
+  if (formatType === 'date') return fmtDate(raw)
+  if (formatType === 'time') return fmtTime(raw, false)
+  if (formatType === 'time24') return fmtTime(raw, true)
+  return raw
+}
+
 function HeaderCell({
   label,
   tooltip,
+  isFormula,
   onOpenSettings,
 }: {
   label: string
   tooltip: string
+  isFormula?: boolean
   onOpenSettings?: () => void
 }) {
   const { t } = useTranslation()
@@ -211,6 +227,7 @@ function HeaderCell({
             )}
           </TooltipContent>
         </Tooltip>
+        {isFormula && <Code2 className="size-3 text-muted-foreground" />}
         {label}
       </span>
       <Tooltip>
@@ -244,15 +261,6 @@ const EDITABLE_COLUMNS = new Set([
   "setup_type",
   "realised_win",
   "realised_loss",
-])
-
-const AUTO_GENERATED_COLS = new Set([
-  "direction",
-  "r_multiple",
-  "deviation",
-  "risk_volatility",
-  "cumulative_pnl",
-  "cumulative_r",
 ])
 
 const colShadow =
@@ -419,6 +427,7 @@ export function TradesTable({
   columnSettings = [],
   columnOptions = {},
   onSaveColumnOptions,
+  formulaColumns = [],
   initialDraftTrades = [],
   onCreateTrade,
   onPatchTrade,
@@ -427,8 +436,10 @@ export function TradesTable({
 }: Props) {
   const { t } = useTranslation()
 
-  const customColumns = columnSettings.filter((s) =>
-    s.column_id.startsWith("custom_")
+  const customColumns = columnSettings.filter((s) => s.user_id !== null)
+  const customColumnIds = useMemo(
+    () => new Set(customColumns.map((s) => s.column_id)),
+    [customColumns]
   )
   const allColumnKeys = [
     ...DEFAULT_COLUMN_ORDER,
@@ -448,6 +459,8 @@ export function TradesTable({
     format_type: FormatType
     initialOptions?: { value: string; label: string }[]
     isBuiltIn: boolean
+    is_formula?: boolean
+    formula?: string | null
   }
   const [settingsTarget, setSettingsTarget] = useState<SettingsTarget | null>(
     null
@@ -498,6 +511,31 @@ export function TradesTable({
   })
   const draftRowsRef = useRef<Map<number, DraftRow>>(new Map())
   draftRowsRef.current = draftRows
+
+  // Sync newly arriving draft trades (e.g. after duplication) into draftRows.
+  // The lazy useState initializer only runs once at mount, so new entries in
+  // initialDraftTrades won't appear unless we explicitly add them here.
+  useEffect(() => {
+    const knownIds = new Set(Array.from(draftRowsRef.current.values()).map((d) => d.id))
+    const incoming = initialDraftTrades.filter((t) => !knownIds.has(t.id))
+    if (incoming.length === 0) return
+    setDraftRows((prev) => {
+      const newMap = new Map(prev)
+      let nextIdx = prev.size === 0 ? 0 : Math.max(...Array.from(prev.keys())) + 1
+      for (const trade of incoming) {
+        const filledFields = (trade.draft_fields as string[]) ?? []
+        const fields: Partial<RawTrade> = {}
+        for (const key of filledFields) {
+          const k = key as keyof RawTrade
+          if (trade[k] !== undefined) (fields as Record<string, unknown>)[key] = trade[k]
+        }
+        if (trade.custom_data && Object.keys(trade.custom_data).length > 0)
+          fields.custom_data = trade.custom_data
+        newMap.set(nextIdx++, { id: trade.id, fields, filledFields, sortOrder: trade.sort_order })
+      }
+      return newMap
+    })
+  }, [initialDraftTrades])
 
   type InsertedBlank = {
     localId: string
@@ -568,7 +606,7 @@ export function TradesTable({
     currentValue: unknown
   ) {
     const isEditable =
-      EDITABLE_COLUMNS.has(columnId) || columnId.startsWith("custom_")
+      EDITABLE_COLUMNS.has(columnId) || (customColumnIds.has(columnId) && !isFormulaCol(columnId))
     if (!isEditable) {
       toast(t("trades.cell.readOnly"))
       return
@@ -577,14 +615,14 @@ export function TradesTable({
     if (rowId.startsWith("new-")) {
       const idx = parseInt(rowId.slice(4))
       const draft = draftRowsRef.current.get(idx)
-      const draftVal = columnId.startsWith("custom_")
+      const draftVal = customColumnIds.has(columnId)
         ? draft?.fields.custom_data?.[columnId]
         : draft?.fields[columnId as keyof RawTrade]
       setEditValue(draftVal != null ? String(draftVal) : "")
     } else if (rowId.startsWith("inserted-")) {
       const localId = rowId.slice("inserted-".length)
       const blank = insertedBlanksRef.current.find((b) => b.localId === localId)
-      const val = columnId.startsWith("custom_")
+      const val = customColumnIds.has(columnId)
         ? blank?.fields.custom_data?.[columnId]
         : blank?.fields[columnId as keyof RawTrade]
       setEditValue(val != null ? String(val) : "")
@@ -646,7 +684,7 @@ export function TradesTable({
     if (!blank) return
 
     const isEmpty = !value.trim()
-    const isCustom = columnId.startsWith("custom_")
+    const isCustom = customColumnIds.has(columnId)
 
     if (isCustom) {
       const mergedCustomData = {
@@ -773,11 +811,30 @@ export function TradesTable({
     hasPrices: boolean,
     enrichedDraft: EnrichedTrade
   ): React.ReactNode {
-    if (colId.startsWith("custom_")) {
+    if (customColumnIds.has(colId)) {
+      const colSetting = columnSettings.find((s) => s.column_id === colId)
+      if (isFormulaCol(colId)) {
+        const val = enrichedDraft.custom_data?.[colId]
+        if (val == null) return <Code2 className="mx-auto size-4 text-muted-foreground/40" />
+        return <span className="text-sm">{fmtCustomCell(val, colSetting?.format_type)}</span>
+      }
       const val = df.custom_data?.[colId]
-      return val ? <span className="text-sm">{val}</span> : <>&nbsp;</>
+      return val ? <span className="text-sm">{fmtCustomCell(val, colSetting?.format_type)}</span> : <>&nbsp;</>
     }
-    if (colId in df || AUTO_GENERATED_COLS.has(colId)) {
+    // direction is always auto-derived from prices
+    if (colId === "direction") {
+      if (!hasPrices) return <Code2 className="mx-auto size-4 text-muted-foreground/40" />
+      const dir =
+        (enrichedDraft.custom_data?.["direction"] as 'long' | 'short' | undefined) ??
+        (df.avg_entry && df.stop_loss ? deriveDirection(df.avg_entry, df.stop_loss) : undefined)
+      if (!dir) return <Code2 className="mx-auto size-4 text-muted-foreground/40" />
+      return (
+        <span className={cn("text-sm font-medium", dir === "long" ? "text-green-500" : "text-red-500")}>
+          {dir === "long" ? t("trades.direction.long") : t("trades.direction.short")}
+        </span>
+      )
+    }
+    if (colId in df || isFormulaCol(colId)) {
       if (colId === "trade_date")
         return (
           <span className="text-sm tabular-nums">
@@ -851,84 +908,57 @@ export function TradesTable({
         ) : (
           <></>
         )
+      // Formula columns — need prices to compute
       if (!hasPrices)
         return (
-          <SquareFunction className="mx-auto size-4 text-muted-foreground/40" />
+          <Code2 className="mx-auto size-4 text-muted-foreground/40" />
         )
-      if (colId === "direction")
-        return (
-          <span
-            className={cn(
-              "text-sm font-medium",
-              enrichedDraft.direction === "long"
-                ? "text-green-500"
-                : "text-red-500"
-            )}
-          >
-            {enrichedDraft.direction === "long"
-              ? t("trades.direction.long")
-              : t("trades.direction.short")}
-          </span>
-        )
-      if (colId === "r_multiple")
-        return enrichedDraft.r_multiple != null ? (
-          <span
-            className={cn(
-              "text-sm tabular-nums",
-              enrichedDraft.r_multiple >= 0 ? "text-green-500" : "text-red-500"
-            )}
-          >
-            {enrichedDraft.r_multiple.toFixed(2)}R
+      if (colId === "r_multiple") {
+        const v = getFormulaVal("r_multiple", enrichedDraft)
+        return v != null ? (
+          <span className={cn("text-sm tabular-nums", v >= 0 ? "text-green-500" : "text-red-500")}>
+            {v.toFixed(2)}R
           </span>
         ) : (
-          <SquareFunction className="mx-auto size-4 text-muted-foreground/40" />
+          <Code2 className="mx-auto size-4 text-muted-foreground/40" />
         )
-      if (colId === "deviation")
-        return enrichedDraft.deviation != null ? (
-          <span className="text-sm tabular-nums">
-            {fmtPercent(enrichedDraft.deviation)}
+      }
+      if (colId === "deviation") {
+        const v = getFormulaVal("deviation", enrichedDraft)
+        return v != null ? (
+          <span className="text-sm tabular-nums">{fmtPercent(v)}</span>
+        ) : (
+          <Code2 className="mx-auto size-4 text-muted-foreground/40" />
+        )
+      }
+      if (colId === "risk_volatility") {
+        const v = getFormulaVal("risk_volatility", enrichedDraft)
+        return v != null ? (
+          <span className="text-sm tabular-nums">{fmtPercent(v)}</span>
+        ) : (
+          <Code2 className="mx-auto size-4 text-muted-foreground/40" />
+        )
+      }
+      if (colId === "cumulative_pnl") {
+        const v = getFormulaVal("cumulative_pnl", enrichedDraft)
+        return v != null ? (
+          <span className={cn("text-sm tabular-nums", v >= 0 ? "text-green-500" : "text-red-500")}>
+            {fmtCurrency(v)}
           </span>
         ) : (
-          <SquareFunction className="mx-auto size-4 text-muted-foreground/40" />
+          <Code2 className="mx-auto size-4 text-muted-foreground/40" />
         )
-      if (colId === "risk_volatility")
-        return enrichedDraft.risk_volatility != null ? (
-          <span className="text-sm tabular-nums">
-            {fmtPercent(enrichedDraft.risk_volatility)}
+      }
+      if (colId === "cumulative_r") {
+        const v = getFormulaVal("cumulative_r", enrichedDraft)
+        return v != null ? (
+          <span className={cn("text-sm tabular-nums", v >= 0 ? "text-green-500" : "text-red-500")}>
+            {v.toFixed(2)}R
           </span>
         ) : (
-          <SquareFunction className="mx-auto size-4 text-muted-foreground/40" />
+          <Code2 className="mx-auto size-4 text-muted-foreground/40" />
         )
-      if (colId === "cumulative_pnl")
-        return enrichedDraft.cumulative_pnl != null ? (
-          <span
-            className={cn(
-              "text-sm tabular-nums",
-              enrichedDraft.cumulative_pnl >= 0
-                ? "text-green-500"
-                : "text-red-500"
-            )}
-          >
-            {fmtCurrency(enrichedDraft.cumulative_pnl)}
-          </span>
-        ) : (
-          <SquareFunction className="mx-auto size-4 text-muted-foreground/40" />
-        )
-      if (colId === "cumulative_r")
-        return enrichedDraft.cumulative_r != null ? (
-          <span
-            className={cn(
-              "text-sm tabular-nums",
-              enrichedDraft.cumulative_r >= 0
-                ? "text-green-500"
-                : "text-red-500"
-            )}
-          >
-            {enrichedDraft.cumulative_r.toFixed(2)}R
-          </span>
-        ) : (
-          <SquareFunction className="mx-auto size-4 text-muted-foreground/40" />
-        )
+      }
     }
     return <>&nbsp;</>
   }
@@ -939,11 +969,18 @@ export function TradesTable({
     hasPrices: boolean,
     enrichedDraft: EnrichedTrade
   ): string {
-    if (colId.startsWith("custom_")) return df.custom_data?.[colId] ?? ""
-    if (AUTO_GENERATED_COLS.has(colId)) {
+    if (customColumnIds.has(colId)) {
+      if (isFormulaCol(colId)) return enrichedDraft.custom_data?.[colId] ?? ""
+      return df.custom_data?.[colId] ?? ""
+    }
+    if (colId === "direction") {
       if (!hasPrices) return ""
-      const v = enrichedDraft[colId as keyof typeof enrichedDraft]
-      return v !== null && v !== undefined ? String(v) : ""
+      return (enrichedDraft.custom_data?.["direction"] as string | undefined)
+        ?? (df.avg_entry && df.stop_loss ? deriveDirection(df.avg_entry, df.stop_loss) : "")
+    }
+    if (isFormulaCol(colId)) {
+      if (!hasPrices) return ""
+      return enrichedDraft.custom_data?.[colId] ?? ""
     }
     const v = df[colId as keyof typeof df]
     if (v === null || v === undefined) return ""
@@ -987,6 +1024,17 @@ export function TradesTable({
     )
   }
 
+  function isFormulaCol(colId: string): boolean {
+    return columnSettings.some((s) => s.column_id === colId && s.is_formula)
+  }
+
+  function getFormulaVal(colId: string, enriched: EnrichedTrade): number | null {
+    const v = enriched.custom_data?.[colId]
+    if (v == null) return null
+    const n = parseFloat(v)
+    return isNaN(n) ? null : n
+  }
+
   function parseFieldForSave(
     columnId: string,
     raw: string
@@ -1009,7 +1057,7 @@ export function TradesTable({
 
     if (!rowId || !columnId) return
 
-    if (columnId.startsWith("custom_")) {
+    if (customColumnIds.has(columnId)) {
       // Merge into custom_data — never pollutes built-in fields
       if (rowId.startsWith("new-")) {
         const idx = parseInt(rowId.slice(4))
@@ -1193,7 +1241,7 @@ export function TradesTable({
 
   const handleOpenColumnSettings = useCallback(
     (columnId: string, label: string, description: string) => {
-      const isCustom = columnId.startsWith("custom_")
+      const isCustom = customColumnIds.has(columnId)
       const existing = columnSettings.find((s) => s.column_id === columnId)
       const format_type: FormatType =
         (existing?.format_type as FormatType) ??
@@ -1207,6 +1255,8 @@ export function TradesTable({
         format_type,
         initialOptions: isDropdown ? resolveOptions(columnId) : undefined,
         isBuiltIn: !isCustom,
+        is_formula: existing?.is_formula,
+        formula: existing?.formula,
       })
     },
     [columnSettings, columnOptions]
@@ -1485,7 +1535,11 @@ export function TradesTable({
         },
       },
       {
-        accessorKey: "deviation",
+        id: "deviation",
+        accessorFn: (row) => {
+          const v = row.custom_data?.["deviation"]
+          return v != null ? parseFloat(v) : null
+        },
         header: () => (
           <HeaderCell
             label={t("trades.columns.deviation")}
@@ -1503,13 +1557,17 @@ export function TradesTable({
           const v = getValue<number | null>()
           if (v === null)
             return (
-              <SquareFunction className="mx-auto size-4 text-muted-foreground/40" />
+              <Code2 className="mx-auto size-4 text-muted-foreground/40" />
             )
           return <span className="tabular-nums">{fmtPercent(v)}</span>
         },
       },
       {
-        accessorKey: "r_multiple",
+        id: "r_multiple",
+        accessorFn: (row) => {
+          const v = row.custom_data?.["r_multiple"]
+          return v != null ? parseFloat(v) : null
+        },
         header: () => (
           <HeaderCell
             label={t("trades.columns.rMultiple")}
@@ -1527,7 +1585,7 @@ export function TradesTable({
           const v = getValue<number | null>()
           if (v === null)
             return (
-              <SquareFunction className="mx-auto size-4 text-muted-foreground/40" />
+              <Code2 className="mx-auto size-4 text-muted-foreground/40" />
             )
           return (
             <span
@@ -1541,7 +1599,11 @@ export function TradesTable({
         },
       },
       {
-        accessorKey: "risk_volatility",
+        id: "risk_volatility",
+        accessorFn: (row) => {
+          const v = row.custom_data?.["risk_volatility"]
+          return v != null ? parseFloat(v) : null
+        },
         header: () => (
           <HeaderCell
             label={t("trades.columns.riskVolatility")}
@@ -1559,13 +1621,17 @@ export function TradesTable({
           const v = getValue<number | null>()
           if (v === null)
             return (
-              <SquareFunction className="mx-auto size-4 text-muted-foreground/40" />
+              <Code2 className="mx-auto size-4 text-muted-foreground/40" />
             )
           return <span className="tabular-nums">{fmtPercent(v)}</span>
         },
       },
       {
-        accessorKey: "cumulative_pnl",
+        id: "cumulative_pnl",
+        accessorFn: (row) => {
+          const v = row.custom_data?.["cumulative_pnl"]
+          return v != null ? parseFloat(v) : null
+        },
         header: () => (
           <HeaderCell
             label={t("trades.columns.cumulativePnl")}
@@ -1583,7 +1649,7 @@ export function TradesTable({
           const v = getValue<number | null>()
           if (v === null)
             return (
-              <SquareFunction className="mx-auto size-4 text-muted-foreground/40" />
+              <Code2 className="mx-auto size-4 text-muted-foreground/40" />
             )
           return (
             <span
@@ -1597,7 +1663,11 @@ export function TradesTable({
         },
       },
       {
-        accessorKey: "cumulative_r",
+        id: "cumulative_r",
+        accessorFn: (row) => {
+          const v = row.custom_data?.["cumulative_r"]
+          return v != null ? parseFloat(v) : null
+        },
         header: () => (
           <HeaderCell
             label={t("trades.columns.cumulativeR")}
@@ -1615,7 +1685,7 @@ export function TradesTable({
           const v = getValue<number | null>()
           if (v === null)
             return (
-              <SquareFunction className="mx-auto size-4 text-muted-foreground/40" />
+              <Code2 className="mx-auto size-4 text-muted-foreground/40" />
             )
           return (
             <span
@@ -1687,14 +1757,16 @@ export function TradesTable({
           <HeaderCell
             label={s.name}
             tooltip={s.description ?? ""}
+            isFormula={s.is_formula}
             onOpenSettings={() =>
               handleOpenColumnSettings(s.column_id, s.name, s.description ?? "")
             }
           />
         ),
         cell: ({ getValue }) => {
-          const val = getValue<string>()
-          return val ? <span className="text-sm">{val}</span> : null
+          const raw = getValue<string>()
+          if (!raw) return null
+          return <span className="text-sm tabular-nums">{fmtCustomCell(raw, s.format_type)}</span>
         },
       })),
     ],
@@ -1727,7 +1799,7 @@ export function TradesTable({
     columnId: string,
     forceColumnActionsDisabled = false,
   ) {
-    const isCustom = !forceColumnActionsDisabled && columnId.startsWith("custom_")
+    const isCustom = !forceColumnActionsDisabled && customColumnIds.has(columnId)
     return (
       <>
         <ContextMenuItem
@@ -2058,7 +2130,7 @@ export function TradesTable({
                     updated_at: "",
                   }
                   const allForEnrich = [...(trades as unknown as RawTrade[]), draftRaw]
-                  const enrichedDraft = enrichTrades(allForEnrich)[allForEnrich.length - 1]
+                  const enrichedDraft = enrichTrades(allForEnrich, formulaColumns)[allForEnrich.length - 1]
                   const hasPrices = draftRaw.avg_entry > 0 && draftRaw.stop_loss > 0 && draftRaw.avg_exit > 0
                   return (
                     <TableRow key={rowId}>
@@ -2163,7 +2235,7 @@ export function TradesTable({
                   draftRaw,
                 ]
                 const enrichedBlank =
-                  enrichTrades(allForEnrich)[allForEnrich.length - 1]
+                  enrichTrades(allForEnrich, formulaColumns)[allForEnrich.length - 1]
                 const hasPrices =
                   draftRaw.avg_entry > 0 &&
                   draftRaw.stop_loss > 0 &&
@@ -2328,7 +2400,7 @@ export function TradesTable({
                   draftRaw,
                 ]
                 const enrichedDraft =
-                  enrichTrades(allForEnrich)[allForEnrich.length - 1]
+                  enrichTrades(allForEnrich, formulaColumns)[allForEnrich.length - 1]
                 const hasPrices =
                   draftRaw.avg_entry > 0 &&
                   draftRaw.stop_loss > 0 &&
@@ -2455,6 +2527,7 @@ export function TradesTable({
             setSettingsTarget(null)
           }
         }}
+        existingFormulaIds={columnSettings.map(s => s.column_id)}
         initialData={
           settingsTarget
             ? {
@@ -2463,6 +2536,8 @@ export function TradesTable({
                 description: settingsTarget.description,
                 format_type: settingsTarget.format_type,
                 isBuiltIn: settingsTarget.isBuiltIn,
+                is_formula: settingsTarget.is_formula,
+                formula: settingsTarget.formula,
               }
             : undefined
         }

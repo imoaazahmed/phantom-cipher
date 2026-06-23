@@ -19,7 +19,7 @@ export default async function TradesPage() {
     supabase
       .from('column_settings')
       .select('*')
-      .eq('user_id', user.id)
+      .or(`user_id.is.null,user_id.eq.${user.id}`)
       .order('created_at', { ascending: true }),
     supabase
       .from('column_options')

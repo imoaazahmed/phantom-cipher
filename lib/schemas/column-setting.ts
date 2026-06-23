@@ -10,20 +10,10 @@ export const columnSettingSchema = yup.object({
     .default('auto'),
   is_formula: yup.boolean().default(false),
   formula: yup.string().nullable().default(null),
-  formula_id: yup
+  column_id: yup
     .string()
     .nullable()
-    .default(null)
-    .when('is_formula', {
-      is: true,
-      then: (s) =>
-        s
-          .required('trades.formula.errorVariableIdRequired')
-          .matches(
-            /^[a-zA-Z_][a-zA-Z0-9_]*$/,
-            'trades.formula.errorVariableIdFormat'
-          ),
-    }),
+    .default(null),
 })
 
 export type ColumnSettingFormData = yup.InferType<typeof columnSettingSchema>

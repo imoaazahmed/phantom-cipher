@@ -37,6 +37,7 @@ export function enrichTrades(
       realised_win: trade.realised_win,
       realised_loss: trade.realised_loss,
       direction: trade.direction,
+      order_type: trade.order_type,
       ticker: trade.ticker,
       trade_date: trade.trade_date,
       trade_time: trade.trade_time,

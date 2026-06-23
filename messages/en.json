@@ -189,7 +189,7 @@
     "deleteColumnDialog": {
       "title": "Delete \"{{name}}\"?",
       "description": "This will permanently remove the column and all its settings. This action cannot be undone.",
-      "hint": "Consider hiding the column instead — you can always show it again later.",
+      "hint": "Consider hiding the column instead, you can always show it again later.",
       "hide": "Hide Instead",
       "confirm": "Delete Column"
     },
@@ -216,13 +216,34 @@
       "editTitle": "Edit Column",
       "saveEdit": "Save Changes",
       "noDescriptionHint": "Add a description to this column to show in the tooltip",
-      "builtInAlert": "This is a built-in column. Its name, description, and cell type are locked and cannot be changed.",
-      "builtInLockedItemsAlert": "This is a built-in column. You can only reorder the items — adding, renaming, and deleting are not allowed.",
+      "builtInAlert": "This is a built-in column. Some inputs cannot be changed.",
       "dangerZone": "Danger Zone",
       "hideColumnLabel": "Hide column",
       "hideColumnDescription": "The column will be hidden from the table. You can show it again at any time from the Columns Manager.",
       "deleteColumnLabel": "Delete column",
-      "deleteColumnDescription": "This action cannot be undone. All values stored in this column will be permanently deleted."
+      "deleteColumnDescription": "This action cannot be undone. All values stored in this column will be permanently deleted.",
+      "autoCalculateLabel": "Auto-calculate",
+      "autoCalculateDescription": "Make this column's value computed by a JavaScript formula.",
+      "formulaLabel": "Formula",
+      "variableIdLabel": "Column ID",
+      "variableIdPlaceholder": "e.g. my_custom_column_id",
+      "variableIdHint": "Use this ID to reference this column in other formulas. Cannot be changed after saving.",
+      "variableIdTooltip": "A unique identifier for this column. Use it to reference this column's value inside other formula columns (e.g. rest.my_column_id).",
+      "variableIdAvailable": "Column ID is available.",
+      "variableIdLockWarning": "You won't be able to change it after saving, to use a different ID you must delete this column and create a new one.",
+      "generateIdButton": "Generate",
+      "formulaBuiltInHint": "This is a built-in formula column. You can view the formula but cannot modify it.",
+      "viewFormulaButton": "Open Formula Editor",
+      "editFormulaButton": "Open Formula Editor",
+      "discardFormulaTitle": "Discard formula changes?",
+      "discardFormulaDescription": "You edited the formula but haven't saved the column. Your changes will be lost.",
+      "discardFormulaKeep": "Keep editing",
+      "discardFormulaConfirm": "Discard"
+    },
+    "formula": {
+      "errorVariableIdRequired": "Column ID is required",
+      "errorVariableIdFormat": "Must start with a letter or underscore and contain only letters, digits, or underscores",
+      "errorVariableIdTaken": "This Column ID is already taken. Edit it, change the column name, or click Generate."
     },
     "columnOptions": {
       "title": "{{column}} Options",
