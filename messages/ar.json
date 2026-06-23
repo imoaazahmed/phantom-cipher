@@ -232,6 +232,8 @@
       "variableIdAvailable": "معرّف العمود متاح.",
       "variableIdLockWarning": "لن تتمكن من تغييره بعد الحفظ، لاستخدام معرّف مختلف يجب حذف هذا العمود وإنشاء عمود جديد.",
       "generateIdButton": "توليد",
+      "generateIdNoName": "أضف اسم العمود أولاً لتوليد معرف مناسب.",
+      "errorNameTaken": "يوجد عمود بهذا الاسم بالفعل.",
       "formulaBuiltInHint": "هذا عمود معادلة مدمج. يمكنك عرض المعادلة لكن لا يمكن تعديلها.",
       "viewFormulaButton": "فتح محرر المعادلة",
       "editFormulaButton": "فتح محرر المعادلة",

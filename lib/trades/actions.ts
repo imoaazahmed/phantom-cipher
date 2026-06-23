@@ -404,6 +404,15 @@ export async function createColumnSetting(input: {
   if (taken && taken.length > 0)
     return { data: null, error: 'trades.formula.errorVariableIdTaken' }
 
+  const { data: nameTaken } = await supabase
+    .from('column_settings')
+    .select('id')
+    .or(`user_id.is.null,user_id.eq.${user.id}`)
+    .ilike('name', input.name.trim())
+    .limit(1)
+  if (nameTaken && nameTaken.length > 0)
+    return { data: null, error: 'trades.addColumnDialog.errorNameTaken' }
+
   const { data, error } = await supabase
     .from('column_settings')
     .insert({
@@ -436,6 +445,16 @@ export async function updateColumnSetting(
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'errors.unauthorized' }
+
+  const { data: nameTaken } = await supabase
+    .from('column_settings')
+    .select('id')
+    .or(`user_id.is.null,user_id.eq.${user.id}`)
+    .ilike('name', input.name.trim())
+    .neq('column_id', columnId)
+    .limit(1)
+  if (nameTaken && nameTaken.length > 0)
+    return { error: 'trades.addColumnDialog.errorNameTaken' }
 
   const { error } = await supabase
     .from('column_settings')

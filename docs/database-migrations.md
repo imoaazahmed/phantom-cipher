@@ -466,3 +466,41 @@ After running the above, drop the now-redundant column:
 ```sql
 ALTER TABLE public.column_settings DROP COLUMN IF EXISTS formula_id;
 ```
+
+---
+
+## 2026-06-23 — Seed non-formula built-in columns into column_settings
+
+All built-in columns now live in the database as a single source of truth.
+
+```sql
+insert into public.column_settings
+  (user_id, column_id, name, description, format_type, is_formula, formula)
+values
+  (null, 'trade_number', '#',          'Trade number', 'number', false, null),
+  (null, 'trade_date',  'Date',        'The date when the trade was placed or position was opened', 'date', false, null),
+  (null, 'trade_time',  'Time',        'The time when the trade was placed or position was opened', 'time', false, null),
+  (null, 'ticker',      'Ticker',      'The trading symbol, e.g. BTC, ETH', 'dropdown', false, null),
+  (null, 'order_type',  'Order Type',  'Market / Limit', 'dropdown', false, null),
+  (null, 'avg_entry',   'Avg Entry',   'Entry price for a single entry, or average entry price across partial entries', 'currency', false, null),
+  (null, 'stop_loss',   'Stop Loss',   'The price level where your stop loss was set', 'currency', false, null),
+  (null, 'avg_exit',    'Avg Exit',    'Final average price at which you exited the trade (win or loss)', 'currency', false, null),
+  (null, 'risk',        'Risk',        'Risk in USD$ including slippage and fees', 'currency', false, null),
+  (null, 'realised_loss', 'Realised Loss', 'Your PnL in USD$ if the trade was a loss', 'currency', false, null),
+  (null, 'realised_win',  'Realised Win',  'Your PnL in USD$ if the trade was a win', 'currency', false, null),
+  (null, 'rules_followed', 'Rules?',   'Did you follow the rules exactly? If NO, the challenge is considered failed', 'dropdown', false, null),
+  (null, 'setup_type',  'Setup Type',  'Strategy category, e.g. Trend Following, Pullback', 'dropdown', false, null)
+on conflict do nothing;
+```
+
+---
+
+## 2026-06-23 — Unique column names per user (case-insensitive)
+
+Prevents two custom columns from having the same name (e.g. "Fees" and "fees").
+
+```sql
+CREATE UNIQUE INDEX column_settings_user_name_unique_idx
+  ON public.column_settings (user_id, lower(name))
+  WHERE user_id IS NOT NULL;
+```

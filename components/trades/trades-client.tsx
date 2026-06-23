@@ -450,6 +450,7 @@ export function TradesClient({ patches: initialPatches, columnSettings, savedCol
             open={addColumnOpen}
             onOpenChange={setAddColumnOpen}
             existingFormulaIds={columnSettings.map(s => s.column_id)}
+            existingColumnNames={columnSettings.map(s => s.name)}
           />
         </div>
       )}

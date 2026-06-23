@@ -199,6 +199,7 @@ type Props = {
   onDeleteRequest?: () => void
   onHideRequest?: () => void
   existingFormulaIds?: string[]
+  existingColumnNames?: string[]
 }
 
 const CELL_TYPE_OPTIONS = [
@@ -271,6 +272,7 @@ export function AddColumnDialog({
   onDeleteRequest,
   onHideRequest,
   existingFormulaIds = [],
+  existingColumnNames = [],
 }: Props) {
   const { t } = useTranslation()
   const router = useRouter()
@@ -399,6 +401,25 @@ export function AddColumnDialog({
     if (isBuiltIn || formulaIdLocked || formulaIdManuallyEdited.current) return
     const generated = generateFormulaId(watchedName ?? '')
     setValue('column_id', generated, { shouldValidate: false, shouldDirty: false })
+  }, [watchedName]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Real-time column name uniqueness check (debounced, case-insensitive)
+  useEffect(() => {
+    if (isBuiltIn) return
+    const trimmed = watchedName?.trim() ?? ''
+    if (!trimmed) { clearErrors('name'); return }
+    const timer = setTimeout(() => {
+      const ownName = initialData?.name?.toLowerCase() ?? null
+      const taken = existingColumnNames
+        .filter(n => n.toLowerCase() !== ownName)
+        .some(n => n.toLowerCase() === trimmed.toLowerCase())
+      if (taken) {
+        setError('name', { type: 'manual', message: 'trades.addColumnDialog.errorNameTaken' })
+      } else {
+        clearErrors('name')
+      }
+    }, 300)
+    return () => clearTimeout(timer)
   }, [watchedName]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Seed default options when switching to Dropdown for the first time
@@ -623,6 +644,10 @@ export function AddColumnDialog({
                     <InputGroupAddon align="inline-end">
                       <InputGroupButton
                         onClick={() => {
+                          if (!watchedName?.trim()) {
+                            setError('column_id', { type: 'manual', message: 'trades.addColumnDialog.generateIdNoName' })
+                            return
+                          }
                           const generated = generateUniqueFormulaId(watchedName ?? '', existingFormulaIds, initialData?.columnId ?? null)
                           setValue('column_id', generated, { shouldValidate: true, shouldDirty: true })
                           formulaIdManuallyEdited.current = false

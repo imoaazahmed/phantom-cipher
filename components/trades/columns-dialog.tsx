@@ -16,7 +16,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { DEFAULT_COLUMN_ORDER, COLUMN_LABELS, REQUIRED_COLUMNS } from '@/lib/trades/column-order'
+import { DEFAULT_COLUMN_ORDER, COLUMN_LABELS, REQUIRED_COLUMNS, PINNED_COLUMN } from '@/lib/trades/column-order'
 import type { ColumnSetting } from '@/lib/trades/types'
 import { AddColumnDialog } from './add-column-dialog'
 
@@ -38,7 +38,8 @@ export function ColumnsDialog({ columnVisibility, onVisibilityChange, onShowAll,
   const [search, setSearch] = useState('')
   const [addColumnOpen, setAddColumnOpen] = useState(false)
 
-  const customColumns = columnSettings.filter((s) => s.user_id !== null)
+  const BUILT_IN_IDS = new Set([PINNED_COLUMN, ...DEFAULT_COLUMN_ORDER])
+  const customColumns = columnSettings.filter((s) => s.user_id !== null && !BUILT_IN_IDS.has(s.column_id))
 
   const query = search.trim().toLowerCase()
   const filtered = DEFAULT_COLUMN_ORDER.filter((id) => {

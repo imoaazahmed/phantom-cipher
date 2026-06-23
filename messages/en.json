@@ -232,6 +232,8 @@
       "variableIdAvailable": "Column ID is available.",
       "variableIdLockWarning": "You won't be able to change it after saving, to use a different ID you must delete this column and create a new one.",
       "generateIdButton": "Generate",
+      "generateIdNoName": "Add a column name first to generate a relevant ID.",
+      "errorNameTaken": "A column with this name already exists.",
       "formulaBuiltInHint": "This is a built-in formula column. You can view the formula but cannot modify it.",
       "viewFormulaButton": "Open Formula Editor",
       "editFormulaButton": "Open Formula Editor",

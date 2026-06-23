@@ -436,7 +436,13 @@ export function TradesTable({
 }: Props) {
   const { t } = useTranslation()
 
-  const customColumns = columnSettings.filter((s) => s.user_id !== null)
+  const BUILT_IN_IDS = useMemo(
+    () => new Set([PINNED_COLUMN, ...DEFAULT_COLUMN_ORDER]),
+    []
+  )
+  const customColumns = columnSettings.filter(
+    (s) => s.user_id !== null && !BUILT_IN_IDS.has(s.column_id)
+  )
   const customColumnIds = useMemo(
     () => new Set(customColumns.map((s) => s.column_id)),
     [customColumns]
@@ -2528,6 +2534,7 @@ export function TradesTable({
           }
         }}
         existingFormulaIds={columnSettings.map(s => s.column_id)}
+        existingColumnNames={columnSettings.map(s => s.name)}
         initialData={
           settingsTarget
             ? {

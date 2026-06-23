@@ -204,14 +204,60 @@ create unique index column_settings_builtin_column_id_idx
 -- column_id must be globally unique across all users and built-ins
 create unique index column_settings_column_id_global_idx
   on public.column_settings (column_id);
+
+-- Column names must be unique per user (case-insensitive)
+create unique index column_settings_user_name_unique_idx
+  on public.column_settings (user_id, lower(name))
+  where user_id is not null;
 ```
 
-Then seed the six built-in formula rows:
+Then seed all built-in column rows (non-formula + formula):
 
 ```sql
 insert into public.column_settings
   (user_id, column_id, name, description, format_type, is_formula, formula)
 values
+  -- Non-formula built-in columns
+  (null, 'trade_number', '#',
+   'Trade number', 'number', false, null),
+
+  (null, 'trade_date', 'Date',
+   'The date when the trade was placed or position was opened', 'date', false, null),
+
+  (null, 'trade_time', 'Time',
+   'The time when the trade was placed or position was opened', 'time', false, null),
+
+  (null, 'ticker', 'Ticker',
+   'The trading symbol, e.g. BTC, ETH', 'dropdown', false, null),
+
+  (null, 'order_type', 'Order Type',
+   'Market / Limit', 'dropdown', false, null),
+
+  (null, 'avg_entry', 'Avg Entry',
+   'Entry price for a single entry, or average entry price across partial entries', 'currency', false, null),
+
+  (null, 'stop_loss', 'Stop Loss',
+   'The price level where your stop loss was set', 'currency', false, null),
+
+  (null, 'avg_exit', 'Avg Exit',
+   'Final average price at which you exited the trade (win or loss)', 'currency', false, null),
+
+  (null, 'risk', 'Risk',
+   'Risk in USD$ including slippage and fees', 'currency', false, null),
+
+  (null, 'realised_loss', 'Realised Loss',
+   'Your PnL in USD$ if the trade was a loss', 'currency', false, null),
+
+  (null, 'realised_win', 'Realised Win',
+   'Your PnL in USD$ if the trade was a win', 'currency', false, null),
+
+  (null, 'rules_followed', 'Rules?',
+   'Did you follow the rules exactly? If NO, the challenge is considered failed', 'dropdown', false, null),
+
+  (null, 'setup_type', 'Setup Type',
+   'Strategy category, e.g. Trend Following, Pullback', 'dropdown', false, null),
+
+  -- Formula built-in columns
   (null, 'direction', 'Direction',
    'Long or short, derived from avg entry vs stop loss.',
    'auto', true,
@@ -247,7 +293,7 @@ return ((risk - prev_risk) / prev_risk) * 100;'),
    'const rm = typeof rest.r_multiple === ''number'' ? rest.r_multiple : 0;
 return running_r + rm;')
 
-on conflict (column_id) do nothing;
+on conflict do nothing;
 ```
 
 ---
