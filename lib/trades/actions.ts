@@ -338,10 +338,22 @@ export async function duplicateTrade(tradeId: string): Promise<{ data: RawTrade 
 
   const nextNumber = existing && existing.length > 0 ? existing[0].trade_number + 1 : 1
 
-  const { id: _id, created_at: _ca, updated_at: _ua, trade_number: _tn, ...rest } = source
+  const { data: nextRow } = await supabase
+    .from('trades')
+    .select('sort_order')
+    .eq('patch_id', source.patch_id)
+    .gt('sort_order', source.sort_order)
+    .order('sort_order', { ascending: true })
+    .limit(1)
+
+  const nextSortOrder = nextRow && nextRow.length > 0
+    ? (source.sort_order + nextRow[0].sort_order) / 2
+    : source.sort_order + 1.0
+
+  const { id: _id, created_at: _ca, updated_at: _ua, trade_number: _tn, sort_order: _so, ...rest } = source
   const { data, error } = await supabase
     .from('trades')
-    .insert({ ...rest, trade_number: nextNumber, user_id: user.id })
+    .insert({ ...rest, trade_number: nextNumber, sort_order: nextSortOrder, user_id: user.id })
     .select()
     .single()
 
@@ -358,7 +370,7 @@ export async function getColumnSettings(): Promise<ColumnSetting[]> {
   const { data } = await supabase
     .from('column_settings')
     .select('*')
-    .eq('user_id', user.id)
+    .or(`user_id.is.null,user_id.eq.${user.id}`)
     .order('created_at', { ascending: true })
 
   return (data ?? []) as ColumnSetting[]
@@ -368,10 +380,23 @@ export async function createColumnSetting(input: {
   name: string
   description?: string
   format_type: FormatType
+  is_formula?: boolean
+  formula?: string | null
+  formula_id?: string | null
 }): Promise<{ data: ColumnSetting | null; error: string | null }> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { data: null, error: 'errors.unauthorized' }
+
+  if (input.formula_id) {
+    const { data: existing } = await supabase
+      .from('column_settings')
+      .select('id')
+      .eq('formula_id', input.formula_id)
+      .limit(1)
+    if (existing && existing.length > 0)
+      return { data: null, error: 'trades.formula.errorVariableIdTaken' }
+  }
 
   const column_id = `custom_${crypto.randomUUID()}`
 
@@ -380,9 +405,12 @@ export async function createColumnSetting(input: {
     .insert({
       user_id: user.id,
       column_id,
-      name: input.name,
-      description: input.description || null,
+      name: input.name.trim(),
+      description: input.description?.trim() || null,
       format_type: input.format_type,
+      is_formula: input.is_formula ?? false,
+      formula: input.formula ?? null,
+      formula_id: input.formula_id ?? null,
     })
     .select()
     .single()
@@ -394,18 +422,39 @@ export async function createColumnSetting(input: {
 
 export async function updateColumnSetting(
   columnId: string,
-  input: { name: string; description?: string; format_type: FormatType }
+  input: {
+    name: string
+    description?: string
+    format_type: FormatType
+    is_formula?: boolean
+    formula?: string | null
+    formula_id?: string | null
+  }
 ): Promise<{ error: string | null }> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'errors.unauthorized' }
 
+  // Fetch existing row to enforce formula_id immutability
+  const { data: existing } = await supabase
+    .from('column_settings')
+    .select('formula_id')
+    .eq('column_id', columnId)
+    .eq('user_id', user.id)
+    .single()
+
+  // formula_id is immutable once set — ignore any new value if already saved
+  const formula_id = existing?.formula_id ?? input.formula_id ?? null
+
   const { error } = await supabase
     .from('column_settings')
     .update({
-      name: input.name,
-      description: input.description || null,
+      name: input.name.trim(),
+      description: input.description?.trim() || null,
       format_type: input.format_type,
+      is_formula: input.is_formula ?? false,
+      formula: input.formula ?? null,
+      formula_id,
       updated_at: new Date().toISOString(),
     })
     .eq('column_id', columnId)
