@@ -37,18 +37,49 @@ export type RawTrade = {
   updated_at: string
 }
 
+// Primitives pre-computed by enrichTrades before any formula runs.
+// All five formula columns (r_multiple, deviation, etc.) now live in custom_data.
 export type EnrichedTrade = RawTrade & {
-  r_multiple: number | null
   pnl: number | null
-  deviation: number | null      // null when loss did not exceed planned risk (or trade was a win)
-  risk_volatility: number | null // null for first trade in patch
-  cumulative_pnl: number | null
-  cumulative_r: number | null
+  prev_risk: number | null
+  running_pnl: number          // cumulative pnl of all rows BEFORE this one
+  running_r: number            // cumulative r_multiple of all rows BEFORE this one
+  row_index: number
+}
+
+// The parameter object destructured inside every formula function body.
+export type FormulaRow = {
+  avg_entry: number
+  avg_exit: number
+  stop_loss: number
+  risk: number
+  realised_win: number | null
+  realised_loss: number | null
+  direction: 'long' | 'short'
+  ticker: string
+  trade_date: string
+  trade_time: string
+  rules_followed: boolean
+  setup_type: string
+  trade_number: number
+  pnl: number | null
+  prev_risk: number | null
+  running_pnl: number
+  running_r: number
+  row_index: number
+  [key: string]: unknown   // earlier formula results accumulated in topo order
+}
+
+// Runtime shape passed from trades-client to enrichTrades.
+export type FormulaColumn = {
+  columnId: string    // e.g. "r_multiple" or "custom_abc123" — key in custom_data
+  formulaId: string   // e.g. "r_multiple" or "coinSize" — variable name in FormulaRow
+  fn: (row: FormulaRow) => unknown
 }
 
 export type TradeFormData = {
-  trade_date: string         // "YYYY-MM-DD"
-  trade_time: string         // "HH:MM" from form input, converted to "HH:MM:SS" before saving
+  trade_date: string
+  trade_time: string
   ticker: string
   direction: 'long' | 'short'
   order_type: 'market' | 'limit'
@@ -88,6 +119,9 @@ export type ColumnSetting = {
   name: string
   description: string | null
   format_type: FormatType
+  is_formula: boolean
+  formula: string | null
+  formula_id: string | null
   created_at: string
   updated_at: string
 }
