@@ -17,21 +17,19 @@ export type RawTrade = {
   patch_id: string
   trade_number: number
   sort_order: number
-  trade_date: string       // "YYYY-MM-DD"
-  trade_time: string       // "HH:MM:SS"
-  ticker: string
-  direction: 'long' | 'short'
-  order_type: 'market' | 'limit'
-  avg_entry: number
-  stop_loss: number
-  avg_exit: number
-  risk: number
-  rules_followed: boolean
-  setup_type: string
+  trade_date: string | null       // "YYYY-MM-DD"
+  trade_time: string | null       // "HH:MM:SS"
+  ticker: string | null
+  direction: 'long' | 'short' | null
+  order_type: 'market' | 'limit' | null
+  avg_entry: number | null
+  stop_loss: number | null
+  avg_exit: number | null
+  risk: number | null
+  rules_followed: boolean | null
+  setup_type: string | null
   realised_win: number | null
   realised_loss: number | null
-  is_draft?: boolean
-  draft_fields?: string[]
   custom_data?: Record<string, string>
   created_at: string
   updated_at: string
@@ -49,20 +47,20 @@ export type EnrichedTrade = RawTrade & {
 
 // The parameter object destructured inside every formula function body.
 export type FormulaRow = {
-  // Raw trade fields
-  avg_entry: number
-  avg_exit: number
-  stop_loss: number
-  risk: number
+  // Raw trade fields (nullable since trade fields are now nullable)
+  avg_entry: number | null
+  avg_exit: number | null
+  stop_loss: number | null
+  risk: number | null
   realised_win: number | null
   realised_loss: number | null
-  direction: 'long' | 'short'
-  order_type: 'market' | 'limit'
-  ticker: string
-  trade_date: string
-  trade_time: string
-  rules_followed: boolean
-  setup_type: string
+  direction: 'long' | 'short' | null
+  order_type: 'market' | 'limit' | null
+  ticker: string | null
+  trade_date: string | null
+  trade_time: string | null
+  rules_followed: boolean | null
+  setup_type: string | null
   trade_number: number
   // Computed primitives
   pnl: number | null
@@ -81,20 +79,19 @@ export type FormulaColumn = {
 }
 
 export type TradeFormData = {
-  trade_date: string
-  trade_time: string
-  ticker: string
-  direction: 'long' | 'short'
-  order_type: 'market' | 'limit'
-  avg_entry: number
-  stop_loss: number
-  avg_exit: number
-  risk: number
-  rules_followed: boolean
-  setup_type: string
+  trade_date?: string | null
+  trade_time?: string | null
+  ticker?: string | null
+  direction?: 'long' | 'short' | null
+  order_type?: 'market' | 'limit' | null
+  avg_entry?: number | null
+  stop_loss?: number | null
+  avg_exit?: number | null
+  risk?: number | null
+  rules_followed?: boolean | null
+  setup_type?: string | null
   realised_win?: number | null
   realised_loss?: number | null
-  draft_fields?: string[]
   custom_data?: Record<string, string>
 }
 

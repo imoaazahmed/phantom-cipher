@@ -100,7 +100,7 @@ import type {
   FormatType,
   FormulaColumn,
 } from "@/lib/trades/types"
-import { enrichTrades, deriveDirection } from "@/lib/trades/calculations"
+import { enrichTrades } from "@/lib/trades/calculations"
 import {
   PINNED_COLUMN,
   DEFAULT_COLUMN_ORDER,
@@ -130,7 +130,6 @@ type Props = {
     options: { value: string; label: string }[]
   ) => Promise<void>
   formulaColumns?: FormulaColumn[]
-  initialDraftTrades?: RawTrade[]
   onCreateTrade: (sortOrder?: number) => Promise<RawTrade | null>
   onPatchTrade: (tradeId: string, fields: Partial<TradeFormData>) => void
   onDeleteTrade: (tradeId: string) => Promise<void>
@@ -428,7 +427,6 @@ export function TradesTable({
   columnOptions = {},
   onSaveColumnOptions,
   formulaColumns = [],
-  initialDraftTrades = [],
   onCreateTrade,
   onPatchTrade,
   onDeleteTrade,
@@ -477,9 +475,8 @@ export function TradesTable({
   } | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [tradeDeleteTarget, setTradeDeleteTarget] = useState<{
-    id: string | null
+    id: string
     number: number
-    draftRowIndex?: number
   } | null>(null)
   const [isDeletingTrade, setIsDeletingTrade] = useState(false)
 
@@ -488,123 +485,55 @@ export function TradesTable({
     columnId: string
   } | null>(null)
   const [editValue, setEditValue] = useState("")
-  const [blankRowCount, setBlankRowCount] = useState(() =>
-    Math.max(initialDraftTrades.length, trades.length === 0 ? 1 : 0)
-  )
-
-  type DraftRow = {
-    id: string | null
-    fields: Partial<RawTrade>
-    filledFields: string[]
-    sortOrder: number
-  }
-  const [draftRows, setDraftRows] = useState<Map<number, DraftRow>>(() => {
-    const map = new Map<number, DraftRow>()
-    initialDraftTrades.forEach((trade, idx) => {
-      const filledFields = trade.draft_fields ?? []
-      const fields: Partial<RawTrade> = {}
-      for (const key of filledFields) {
-        const k = key as keyof RawTrade
-        if (trade[k] !== undefined)
-          (fields as Record<string, unknown>)[key] = trade[k]
-      }
-      if (trade.custom_data && Object.keys(trade.custom_data).length > 0) {
-        fields.custom_data = trade.custom_data
-      }
-      map.set(idx, { id: trade.id, fields, filledFields, sortOrder: trade.sort_order })
-    })
-    return map
-  })
-  const draftRowsRef = useRef<Map<number, DraftRow>>(new Map())
-  draftRowsRef.current = draftRows
-
-  // Sync newly arriving draft trades (e.g. after duplication) into draftRows.
-  // The lazy useState initializer only runs once at mount, so new entries in
-  // initialDraftTrades won't appear unless we explicitly add them here.
-  useEffect(() => {
-    const knownIds = new Set(Array.from(draftRowsRef.current.values()).map((d) => d.id))
-    const incoming = initialDraftTrades.filter((t) => !knownIds.has(t.id))
-    if (incoming.length === 0) return
-    setDraftRows((prev) => {
-      const newMap = new Map(prev)
-      let nextIdx = prev.size === 0 ? 0 : Math.max(...Array.from(prev.keys())) + 1
-      for (const trade of incoming) {
-        const filledFields = (trade.draft_fields as string[]) ?? []
-        const fields: Partial<RawTrade> = {}
-        for (const key of filledFields) {
-          const k = key as keyof RawTrade
-          if (trade[k] !== undefined) (fields as Record<string, unknown>)[key] = trade[k]
-        }
-        if (trade.custom_data && Object.keys(trade.custom_data).length > 0)
-          fields.custom_data = trade.custom_data
-        newMap.set(nextIdx++, { id: trade.id, fields, filledFields, sortOrder: trade.sort_order })
-      }
-      return newMap
-    })
-  }, [initialDraftTrades])
 
   type InsertedBlank = {
     localId: string
     sortOrder: number
     id: string | null
     fields: Partial<RawTrade>
-    filledFields: string[]
   }
-  const [insertedBlanks, setInsertedBlanks] = useState<InsertedBlank[]>([])
+  const [insertedBlanks, setInsertedBlanks] = useState<InsertedBlank[]>(() => [
+    { localId: crypto.randomUUID(), sortOrder: 1, id: null, fields: {} },
+  ])
   const insertedBlanksRef = useRef<InsertedBlank[]>([])
   insertedBlanksRef.current = insertedBlanks
 
   type MergedRow =
     | { type: "real"; trade: EnrichedTrade }
     | { type: "inserted"; blank: InsertedBlank }
-    | { type: "draft"; idx: number; draft: DraftRow }
 
   const { mergedRows, rankMap } = useMemo(() => {
-    const savedDrafts: MergedRow[] = Array.from(draftRows.entries())
-      .filter(([, d]) => d.id !== null)
-      .map(([idx, d]) => ({ type: "draft" as const, idx, draft: d }))
     const items: MergedRow[] = [
       ...trades.map<MergedRow>((trade) => ({ type: "real", trade })),
-      ...savedDrafts,
-      ...insertedBlanks.map<MergedRow>((blank) => ({
-        type: "inserted",
-        blank,
-      })),
+      ...insertedBlanks.map<MergedRow>((blank) => ({ type: "inserted", blank })),
     ].sort((a, b) => {
-      const sa =
-        a.type === "real"
-          ? a.trade.sort_order
-          : a.type === "draft"
-            ? a.draft.sortOrder
-            : a.blank.sortOrder
-      const sb =
-        b.type === "real"
-          ? b.trade.sort_order
-          : b.type === "draft"
-            ? b.draft.sortOrder
-            : b.blank.sortOrder
+      const sa = a.type === "real" ? a.trade.sort_order : a.blank.sortOrder
+      const sb = b.type === "real" ? b.trade.sort_order : b.blank.sortOrder
       return sa - sb
     })
     const map = new Map<string, number>()
     items.forEach((item, i) => {
-      const key =
-        item.type === "real"
-          ? item.trade.id
-          : item.type === "draft"
-            ? item.draft.id!
-            : item.blank.localId
+      const key = item.type === "real" ? item.trade.id : item.blank.localId
       map.set(key, i + 1)
     })
     return { mergedRows: items, rankMap: map }
-  }, [trades, draftRows, insertedBlanks])
+  }, [trades, insertedBlanks])
 
   const rankMapRef = useRef<Map<string, number>>(new Map())
   rankMapRef.current = rankMap
 
-  // When the last real trade is deleted, ensure at least one blank row remains
+  // When a blank's ID appears in real trades (trade was created from the blank), remove the blank
   useEffect(() => {
-    if (trades.length === 0) setBlankRowCount((prev) => Math.max(prev, 1))
-  }, [trades.length])
+    const realIds = new Set(trades.map((t) => t.id))
+    setInsertedBlanks((prev) => prev.filter((b) => !b.id || !realIds.has(b.id)))
+  }, [trades])
+
+  // When the last real trade is deleted and no blanks remain, add one
+  useEffect(() => {
+    if (trades.length === 0 && insertedBlanks.length === 0) {
+      setInsertedBlanks([{ localId: crypto.randomUUID(), sortOrder: 1, id: null, fields: {} }])
+    }
+  }, [trades.length, insertedBlanks.length])
 
   function handleCellDoubleClick(
     rowId: string,
@@ -618,14 +547,7 @@ export function TradesTable({
       return
     }
     setEditingCell({ rowId, columnId })
-    if (rowId.startsWith("new-")) {
-      const idx = parseInt(rowId.slice(4))
-      const draft = draftRowsRef.current.get(idx)
-      const draftVal = customColumnIds.has(columnId)
-        ? draft?.fields.custom_data?.[columnId]
-        : draft?.fields[columnId as keyof RawTrade]
-      setEditValue(draftVal != null ? String(draftVal) : "")
-    } else if (rowId.startsWith("inserted-")) {
+    if (rowId.startsWith("inserted-")) {
       const localId = rowId.slice("inserted-".length)
       const blank = insertedBlanksRef.current.find((b) => b.localId === localId)
       const val = customColumnIds.has(columnId)
@@ -633,7 +555,7 @@ export function TradesTable({
         : blank?.fields[columnId as keyof RawTrade]
       setEditValue(val != null ? String(val) : "")
     } else {
-      setEditValue(String(currentValue ?? ""))
+      setEditValue(currentValue != null ? String(currentValue) : "")
     }
   }
 
@@ -644,9 +566,6 @@ export function TradesTable({
   function insertBlankAtSortOrder(referenceSortOrder: number, position: "before" | "after") {
     const sortedSortOrders = [
       ...trades.map((t) => t.sort_order),
-      ...Array.from(draftRowsRef.current.values())
-        .filter((d) => d.id !== null)
-        .map((d) => d.sortOrder),
       ...insertedBlanksRef.current.map((b) => b.sortOrder),
     ].sort((a, b) => a - b)
     let newSortOrder: number
@@ -670,9 +589,6 @@ export function TradesTable({
   function handleInsertTrade(tradeId: string, position: "before" | "after") {
     const allItems = [
       ...trades.map((t) => ({ id: t.id, sortOrder: t.sort_order })),
-      ...Array.from(draftRowsRef.current.values())
-        .filter((d) => d.id !== null)
-        .map((d) => ({ id: d.id!, sortOrder: d.sortOrder })),
       ...insertedBlanksRef.current.map((b) => ({ id: b.localId, sortOrder: b.sortOrder })),
     ]
     const found = allItems.find((item) => item.id === tradeId)
@@ -690,13 +606,9 @@ export function TradesTable({
     if (!blank) return
 
     const isEmpty = !value.trim()
-    const isCustom = customColumnIds.has(columnId)
 
-    if (isCustom) {
-      const mergedCustomData = {
-        ...(blank.fields.custom_data ?? {}),
-        [columnId]: value,
-      }
+    if (customColumnIds.has(columnId)) {
+      const mergedCustomData = { ...(blank.fields.custom_data ?? {}), [columnId]: value }
       setInsertedBlanks((prev) =>
         prev.map((b) =>
           b.localId === localId
@@ -704,16 +616,17 @@ export function TradesTable({
             : b
         )
       )
-      if (isEmpty) return
+      if (isEmpty) {
+        if (blank.id) onPatchTrade(blank.id, { custom_data: mergedCustomData })
+        return
+      }
       if (blank.id) {
         onPatchTrade(blank.id, { custom_data: mergedCustomData })
       } else {
         onCreateTrade(blank.sortOrder).then((newTrade) => {
           if (!newTrade) return
           setInsertedBlanks((prev) =>
-            prev.map((b) =>
-              b.localId === localId ? { ...b, id: newTrade.id } : b
-            )
+            prev.map((b) => b.localId === localId ? { ...b, id: newTrade.id } : b)
           )
           onPatchTrade(newTrade.id, { custom_data: mergedCustomData })
         })
@@ -721,64 +634,33 @@ export function TradesTable({
       return
     }
 
-    const fields = parseFieldForSave(columnId, value)
-    const isRequiredNumeric = [
-      "avg_entry",
-      "stop_loss",
-      "avg_exit",
-      "risk",
-    ].includes(columnId)
-    const isOptionalNumeric = ["realised_win", "realised_loss"].includes(
-      columnId
-    )
     const counterpart =
-      columnId === "realised_win"
-        ? "realised_loss"
-        : columnId === "realised_loss"
-          ? "realised_win"
-          : null
-
-    const newFilledFields = isEmpty
-      ? blank.filledFields.filter((f) => f !== columnId)
-      : [
-          ...new Set([
-            ...blank.filledFields.filter((f) => f !== counterpart),
-            columnId,
-          ]),
-        ]
+      columnId === "realised_win" ? "realised_loss"
+      : columnId === "realised_loss" ? "realised_win"
+      : null
 
     setInsertedBlanks((prev) =>
       prev.map((b) => {
         if (b.localId !== localId) return b
         const newFields = { ...b.fields }
-        if (isEmpty && (isRequiredNumeric || isOptionalNumeric)) {
+        if (isEmpty) {
           delete (newFields as Record<string, unknown>)[columnId]
         } else {
-          Object.assign(newFields, fields)
-          if (counterpart && !isEmpty)
-            delete (newFields as Record<string, unknown>)[counterpart]
+          Object.assign(newFields, parseFieldForSave(columnId, value))
+          if (counterpart) delete (newFields as Record<string, unknown>)[counterpart]
         }
-        return { ...b, fields: newFields, filledFields: newFilledFields }
+        return { ...b, fields: newFields }
       })
     )
 
     if (isEmpty) {
-      if (blank.id) {
-        const clearFields: Partial<TradeFormData> = {
-          draft_fields: newFilledFields,
-        }
-        if (isOptionalNumeric)
-          (clearFields as Record<string, unknown>)[columnId] = null
-        else if (!isRequiredNumeric) Object.assign(clearFields, fields)
-        onPatchTrade(blank.id, clearFields)
-      }
+      if (blank.id) onPatchTrade(blank.id, { [columnId]: null } as Partial<TradeFormData>)
       return
     }
 
     const patchFields = {
-      ...fields,
+      ...parseFieldForSave(columnId, value),
       ...(counterpart ? { [counterpart]: null } : {}),
-      draft_fields: newFilledFields,
     } as Partial<TradeFormData>
 
     if (blank.id) {
@@ -787,9 +669,7 @@ export function TradesTable({
       onCreateTrade(blank.sortOrder).then((newTrade) => {
         if (!newTrade) return
         setInsertedBlanks((prev) =>
-          prev.map((b) =>
-            b.localId === localId ? { ...b, id: newTrade.id } : b
-          )
+          prev.map((b) => b.localId === localId ? { ...b, id: newTrade.id } : b)
         )
         onPatchTrade(newTrade.id, patchFields)
       })
@@ -811,28 +691,23 @@ export function TradesTable({
     saveAndCloseInserted(localId, columnId, raw)
   }
 
-  function renderDraftCellContent(
+  function renderPartialCellContent(
     colId: string,
     df: Partial<RawTrade>,
-    hasPrices: boolean,
-    enrichedDraft: EnrichedTrade
+    enrichedPartial: EnrichedTrade
   ): React.ReactNode {
     if (customColumnIds.has(colId)) {
       const colSetting = columnSettings.find((s) => s.column_id === colId)
       if (isFormulaCol(colId)) {
-        const val = enrichedDraft.custom_data?.[colId]
+        const val = enrichedPartial.custom_data?.[colId]
         if (val == null) return <Code2 className="mx-auto size-4 text-muted-foreground/40" />
         return <span className="text-sm">{fmtCustomCell(val, colSetting?.format_type)}</span>
       }
       const val = df.custom_data?.[colId]
-      return val ? <span className="text-sm">{fmtCustomCell(val, colSetting?.format_type)}</span> : <>&nbsp;</>
+      return val ? <span className="text-sm">{fmtCustomCell(val, colSetting?.format_type)}</span> : null
     }
-    // direction is always auto-derived from prices
     if (colId === "direction") {
-      if (!hasPrices) return <Code2 className="mx-auto size-4 text-muted-foreground/40" />
-      const dir =
-        (enrichedDraft.custom_data?.["direction"] as 'long' | 'short' | undefined) ??
-        (df.avg_entry && df.stop_loss ? deriveDirection(df.avg_entry, df.stop_loss) : undefined)
+      const dir = enrichedPartial.custom_data?.["direction"] as 'long' | 'short' | undefined
       if (!dir) return <Code2 className="mx-auto size-4 text-muted-foreground/40" />
       return (
         <span className={cn("text-sm font-medium", dir === "long" ? "text-green-500" : "text-red-500")}>
@@ -840,158 +715,71 @@ export function TradesTable({
         </span>
       )
     }
-    if (colId in df || isFormulaCol(colId)) {
-      if (colId === "trade_date")
-        return (
-          <span className="text-sm tabular-nums">
-            {df.trade_date ? fmtDate(df.trade_date) : ""}
-          </span>
-        )
-      if (colId === "trade_time")
-        return (
-          <span className="text-sm tabular-nums">
-            {df.trade_time
-              ? fmtTime(
-                  String(df.trade_time),
-                  resolveFormatType("trade_time") === "time24"
-                )
-              : ""}
-          </span>
-        )
-      if (colId === "ticker")
-        return <span className="text-sm">{df.ticker ?? ""}</span>
-      if (colId === "order_type")
-        return <span className="text-sm capitalize">{df.order_type ?? ""}</span>
-      if (colId === "avg_entry")
-        return (
-          <span className="text-sm tabular-nums">
-            {df.avg_entry != null ? fmtCurrency(df.avg_entry) : ""}
-          </span>
-        )
-      if (colId === "stop_loss")
-        return (
-          <span className="text-sm tabular-nums">
-            {df.stop_loss != null ? fmtCurrency(df.stop_loss) : ""}
-          </span>
-        )
-      if (colId === "avg_exit")
-        return (
-          <span className="text-sm tabular-nums">
-            {df.avg_exit != null ? fmtCurrency(df.avg_exit) : ""}
-          </span>
-        )
-      if (colId === "risk")
-        return (
-          <span className="text-sm tabular-nums">
-            {df.risk != null ? fmtCurrency(df.risk) : ""}
-          </span>
-        )
-      if (colId === "rules_followed")
-        return (
-          <span className="text-sm">
-            {df.rules_followed != null
-              ? df.rules_followed
-                ? t("trades.form.rulesYes")
-                : t("trades.form.rulesNo")
-              : ""}
-          </span>
-        )
-      if (colId === "setup_type")
-        return <span className="text-sm">{df.setup_type ?? ""}</span>
-      if (colId === "realised_win")
-        return df.realised_win != null ? (
-          <span className="text-sm text-green-600 tabular-nums dark:text-green-400">
-            {fmtCurrency(df.realised_win)}
-          </span>
-        ) : (
-          <></>
-        )
-      if (colId === "realised_loss")
-        return df.realised_loss != null ? (
-          <span className="text-sm text-red-500 tabular-nums">
-            -{fmtCurrency(df.realised_loss)}
-          </span>
-        ) : (
-          <></>
-        )
-      // Formula columns — need prices to compute
-      if (!hasPrices)
-        return (
-          <Code2 className="mx-auto size-4 text-muted-foreground/40" />
-        )
-      if (colId === "r_multiple") {
-        const v = getFormulaVal("r_multiple", enrichedDraft)
-        return v != null ? (
-          <span className={cn("text-sm tabular-nums", v >= 0 ? "text-green-500" : "text-red-500")}>
-            {v.toFixed(2)}R
-          </span>
-        ) : (
-          <Code2 className="mx-auto size-4 text-muted-foreground/40" />
-        )
-      }
-      if (colId === "deviation") {
-        const v = getFormulaVal("deviation", enrichedDraft)
-        return v != null ? (
-          <span className="text-sm tabular-nums">{fmtPercent(v)}</span>
-        ) : (
-          <Code2 className="mx-auto size-4 text-muted-foreground/40" />
-        )
-      }
-      if (colId === "risk_volatility") {
-        const v = getFormulaVal("risk_volatility", enrichedDraft)
-        return v != null ? (
-          <span className="text-sm tabular-nums">{fmtPercent(v)}</span>
-        ) : (
-          <Code2 className="mx-auto size-4 text-muted-foreground/40" />
-        )
-      }
-      if (colId === "cumulative_pnl") {
-        const v = getFormulaVal("cumulative_pnl", enrichedDraft)
-        return v != null ? (
-          <span className={cn("text-sm tabular-nums", v >= 0 ? "text-green-500" : "text-red-500")}>
-            {fmtCurrency(v)}
-          </span>
-        ) : (
-          <Code2 className="mx-auto size-4 text-muted-foreground/40" />
-        )
-      }
-      if (colId === "cumulative_r") {
-        const v = getFormulaVal("cumulative_r", enrichedDraft)
-        return v != null ? (
-          <span className={cn("text-sm tabular-nums", v >= 0 ? "text-green-500" : "text-red-500")}>
-            {v.toFixed(2)}R
-          </span>
-        ) : (
-          <Code2 className="mx-auto size-4 text-muted-foreground/40" />
-        )
-      }
+    if (colId === "trade_date")
+      return df.trade_date ? <span className="text-sm tabular-nums">{fmtDate(df.trade_date)}</span> : null
+    if (colId === "trade_time")
+      return df.trade_time
+        ? <span className="text-sm tabular-nums">{fmtTime(String(df.trade_time), resolveFormatType("trade_time") === "time24")}</span>
+        : null
+    if (colId === "ticker") return df.ticker ? <span className="text-sm">{df.ticker}</span> : null
+    if (colId === "order_type") return df.order_type ? <span className="text-sm capitalize">{df.order_type}</span> : null
+    if (colId === "avg_entry") return df.avg_entry != null ? <span className="text-sm tabular-nums">{fmtCurrency(df.avg_entry)}</span> : null
+    if (colId === "stop_loss") return df.stop_loss != null ? <span className="text-sm tabular-nums">{fmtCurrency(df.stop_loss)}</span> : null
+    if (colId === "avg_exit") return df.avg_exit != null ? <span className="text-sm tabular-nums">{fmtCurrency(df.avg_exit)}</span> : null
+    if (colId === "risk") return df.risk != null ? <span className="text-sm tabular-nums">{fmtCurrency(df.risk)}</span> : null
+    if (colId === "rules_followed")
+      return df.rules_followed != null
+        ? <span className="text-sm">{df.rules_followed ? t("trades.form.rulesYes") : t("trades.form.rulesNo")}</span>
+        : null
+    if (colId === "setup_type") return df.setup_type ? <span className="text-sm">{df.setup_type}</span> : null
+    if (colId === "realised_win")
+      return df.realised_win != null
+        ? <span className="text-sm text-green-600 tabular-nums dark:text-green-400">{fmtCurrency(df.realised_win)}</span>
+        : null
+    if (colId === "realised_loss")
+      return df.realised_loss != null
+        ? <span className="text-sm text-red-500 tabular-nums">-{fmtCurrency(df.realised_loss)}</span>
+        : null
+    // Formula columns
+    if (colId === "r_multiple") {
+      const v = getFormulaVal("r_multiple", enrichedPartial)
+      return v != null ? <span className={cn("text-sm tabular-nums", v >= 0 ? "text-green-500" : "text-red-500")}>{v.toFixed(2)}R</span> : <Code2 className="mx-auto size-4 text-muted-foreground/40" />
     }
-    return <>&nbsp;</>
+    if (colId === "deviation") {
+      const v = getFormulaVal("deviation", enrichedPartial)
+      return v != null ? <span className="text-sm tabular-nums">{fmtPercent(v)}</span> : <Code2 className="mx-auto size-4 text-muted-foreground/40" />
+    }
+    if (colId === "risk_volatility") {
+      const v = getFormulaVal("risk_volatility", enrichedPartial)
+      return v != null ? <span className="text-sm tabular-nums">{fmtPercent(v)}</span> : <Code2 className="mx-auto size-4 text-muted-foreground/40" />
+    }
+    if (colId === "cumulative_pnl") {
+      const v = getFormulaVal("cumulative_pnl", enrichedPartial)
+      return v != null ? <span className={cn("text-sm tabular-nums", v >= 0 ? "text-green-500" : "text-red-500")}>{fmtCurrency(v)}</span> : <Code2 className="mx-auto size-4 text-muted-foreground/40" />
+    }
+    if (colId === "cumulative_r") {
+      const v = getFormulaVal("cumulative_r", enrichedPartial)
+      return v != null ? <span className={cn("text-sm tabular-nums", v >= 0 ? "text-green-500" : "text-red-500")}>{v.toFixed(2)}R</span> : <Code2 className="mx-auto size-4 text-muted-foreground/40" />
+    }
+    return null
   }
 
-  function getDraftCopyText(
+  function getPartialCopyText(
     colId: string,
     df: Partial<RawTrade>,
-    hasPrices: boolean,
-    enrichedDraft: EnrichedTrade
+    enrichedPartial: EnrichedTrade
   ): string {
     if (customColumnIds.has(colId)) {
-      if (isFormulaCol(colId)) return enrichedDraft.custom_data?.[colId] ?? ""
+      if (isFormulaCol(colId)) return enrichedPartial.custom_data?.[colId] ?? ""
       return df.custom_data?.[colId] ?? ""
     }
     if (colId === "direction") {
-      if (!hasPrices) return ""
-      return (enrichedDraft.custom_data?.["direction"] as string | undefined)
-        ?? (df.avg_entry && df.stop_loss ? deriveDirection(df.avg_entry, df.stop_loss) : "")
+      return (enrichedPartial.custom_data?.["direction"] as string | undefined) ?? ""
     }
-    if (isFormulaCol(colId)) {
-      if (!hasPrices) return ""
-      return enrichedDraft.custom_data?.[colId] ?? ""
-    }
+    if (isFormulaCol(colId)) return enrichedPartial.custom_data?.[colId] ?? ""
     const v = df[colId as keyof typeof df]
     if (v === null || v === undefined) return ""
-    if (typeof v === "boolean")
-      return v ? t("trades.form.rulesYes") : t("trades.form.rulesNo")
+    if (typeof v === "boolean") return v ? t("trades.form.rulesYes") : t("trades.form.rulesNo")
     return String(v)
   }
 
@@ -1046,7 +834,8 @@ export function TradesTable({
     raw: string
   ): Partial<TradeFormData> {
     if (["avg_entry", "stop_loss", "avg_exit", "risk"].includes(columnId)) {
-      return { [columnId]: parseFloat(raw) || 0 } as Partial<TradeFormData>
+      const n = parseFloat(raw)
+      return { [columnId]: isNaN(n) ? null : n } as Partial<TradeFormData>
     }
     if (["realised_win", "realised_loss"].includes(columnId)) {
       const n = parseFloat(raw)
@@ -1060,172 +849,32 @@ export function TradesTable({
     const rowId = editingCell?.rowId
     const columnId = editingCell?.columnId
     setEditingCell(null)
-
     if (!rowId || !columnId) return
 
+    const isEmpty = !value.trim()
+    const counterpart =
+      columnId === "realised_win" ? "realised_loss"
+      : columnId === "realised_loss" ? "realised_win"
+      : null
+
     if (customColumnIds.has(columnId)) {
-      // Merge into custom_data — never pollutes built-in fields
-      if (rowId.startsWith("new-")) {
-        const idx = parseInt(rowId.slice(4))
-        const existing = draftRowsRef.current.get(idx) ?? {
-          id: null,
-          fields: {},
-          filledFields: [],
-          sortOrder: 0,
-        }
-        const mergedCustomData = {
-          ...(existing.fields.custom_data ?? {}),
-          [columnId]: value,
-        }
-        setDraftRows((prev) => {
-          const curr = prev.get(idx) ?? {
-            id: null,
-            fields: {},
-            filledFields: [],
-            sortOrder: 0,
-          }
-          return new Map(prev).set(idx, {
-            ...curr,
-            fields: { ...curr.fields, custom_data: mergedCustomData },
-          })
-        })
-        if (!value.trim()) return
-        const patchFields = { custom_data: mergedCustomData }
-        if (existing.id) {
-          onPatchTrade(existing.id, patchFields)
-        } else {
-          onCreateTrade().then((newTrade) => {
-            if (!newTrade) return
-            setDraftRows((prev) => {
-              const curr = prev.get(idx) ?? {
-                id: null,
-                fields: {},
-                filledFields: [],
-                sortOrder: 0,
-              }
-              return new Map(prev).set(idx, { ...curr, id: newTrade.id, sortOrder: newTrade.sort_order })
-            })
-            onPatchTrade(newTrade.id, patchFields)
-          })
-        }
-      } else {
-        const trade = trades.find((t) => t.id === rowId)
-        const mergedCustomData = {
-          ...(trade?.custom_data ?? {}),
-          [columnId]: value,
-        }
-        onPatchTrade(rowId, { custom_data: mergedCustomData })
-      }
+      const trade = trades.find((t) => t.id === rowId)
+      const mergedCustomData = { ...(trade?.custom_data ?? {}), [columnId]: value }
+      onPatchTrade(rowId, { custom_data: mergedCustomData })
       return
     }
 
-    const isEmpty = !value.trim()
-    const fields = parseFieldForSave(columnId, value)
-    const isRequiredNumeric = [
-      "avg_entry",
-      "stop_loss",
-      "avg_exit",
-      "risk",
-    ].includes(columnId)
-    const isOptionalNumeric = ["realised_win", "realised_loss"].includes(
-      columnId
-    )
-    const isNumericColumn = isRequiredNumeric || isOptionalNumeric
-    const counterpart =
-      columnId === "realised_win"
-        ? "realised_loss"
-        : columnId === "realised_loss"
-          ? "realised_win"
-          : null
-
-    if (rowId.startsWith("new-")) {
-      const idx = parseInt(rowId.slice(4))
-      const existing = draftRowsRef.current.get(idx) ?? {
-        id: null,
-        fields: {},
-        filledFields: [],
-        sortOrder: 0,
-      }
-      const newFilledFields = isEmpty
-        ? existing.filledFields.filter((f) => f !== columnId)
-        : [
-            ...new Set([
-              ...existing.filledFields.filter((f) => f !== counterpart),
-              columnId,
-            ]),
-          ]
-      setDraftRows((prev) => {
-        const curr = prev.get(idx) ?? { id: null, fields: {}, filledFields: [], sortOrder: 0 }
-        const newFields = { ...curr.fields }
-        if (isEmpty && isNumericColumn) {
-          delete (newFields as Record<string, unknown>)[columnId]
-        } else {
-          Object.assign(newFields, fields)
-          // Entering one of the pair clears the other
-          if (counterpart && !isEmpty)
-            delete (newFields as Record<string, unknown>)[counterpart]
-        }
-        return new Map(prev).set(idx, {
-          ...curr,
-          fields: newFields,
-          filledFields: newFilledFields,
-        })
-      })
-      if (isEmpty) {
-        // Still persist the clearing to DB so it survives a reload
-        if (existing.id) {
-          const clearFields: Partial<TradeFormData> = {
-            draft_fields: newFilledFields,
-          }
-          if (isOptionalNumeric) {
-            // Can be nulled in DB
-            ;(clearFields as Record<string, unknown>)[columnId] = null
-            if (counterpart)
-              (clearFields as Record<string, unknown>)[counterpart] = null
-          } else if (!isRequiredNumeric) {
-            // Text/other — save empty value
-            Object.assign(clearFields, fields)
-          }
-          // Required numerics: only update draft_fields; can't store null in a NOT NULL column
-          onPatchTrade(existing.id, clearFields)
-        }
-        return
-      }
-      const patchFields = {
-        ...fields,
-        ...(counterpart ? { [counterpart]: null } : {}),
-        draft_fields: newFilledFields,
-      }
-      if (existing.id) {
-        onPatchTrade(existing.id, patchFields)
-      } else {
-        onCreateTrade().then((newTrade) => {
-          if (!newTrade) return
-          setDraftRows((prev) => {
-            const curr = prev.get(idx) ?? {
-              id: null,
-              fields: {},
-              filledFields: [],
-              sortOrder: 0,
-            }
-            return new Map(prev).set(idx, { ...curr, id: newTrade.id, sortOrder: newTrade.sort_order })
-          })
-          onPatchTrade(newTrade.id, patchFields)
-        })
-      }
-    } else {
-      // Clearing a required numeric field on a real trade reverts to old value — don't save
-      if (isEmpty && isRequiredNumeric) return
-      // Clearing an optional numeric field saves null (removes the override)
-      const saveFields =
-        isEmpty && isOptionalNumeric
-          ? ({ [columnId]: null } as Partial<TradeFormData>)
-          : ({
-              ...fields,
-              ...(counterpart && !isEmpty ? { [counterpart]: null } : {}),
-            } as Partial<TradeFormData>)
-      onPatchTrade(rowId, saveFields)
+    if (isEmpty) {
+      const clearFields: Partial<TradeFormData> = { [columnId]: null }
+      if (counterpart) (clearFields as Record<string, unknown>)[counterpart] = null
+      onPatchTrade(rowId, clearFields)
+      return
     }
+
+    onPatchTrade(rowId, {
+      ...parseFieldForSave(columnId, value),
+      ...(counterpart ? { [counterpart]: null } : {}),
+    } as Partial<TradeFormData>)
   }
 
   function validateAndCommit(value?: string) {
@@ -1322,7 +971,10 @@ export function TradesTable({
             }
           />
         ),
-        cell: ({ getValue }) => fmtDate(getValue<string>()),
+        cell: ({ getValue }) => {
+          const v = getValue<string | null>()
+          return v ? <span className="tabular-nums">{fmtDate(v)}</span> : null
+        },
       },
       {
         accessorKey: "trade_time",
@@ -1339,11 +991,10 @@ export function TradesTable({
             }
           />
         ),
-        cell: ({ getValue }) =>
-          fmtTime(
-            getValue<string>(),
-            resolveFormatType("trade_time") === "time24"
-          ),
+        cell: ({ getValue }) => {
+          const v = getValue<string | null>()
+          return v ? <span className="tabular-nums">{fmtTime(v, resolveFormatType("trade_time") === "time24")}</span> : null
+        },
       },
       {
         accessorKey: "ticker",
@@ -1362,7 +1013,8 @@ export function TradesTable({
         ),
       },
       {
-        accessorKey: "direction",
+        id: "direction",
+        accessorFn: (row) => (row.custom_data?.["direction"] ?? null) as 'long' | 'short' | null,
         header: () => (
           <HeaderCell
             label={t("trades.columns.direction")}
@@ -1377,7 +1029,8 @@ export function TradesTable({
           />
         ),
         cell: ({ getValue }) => {
-          const v = getValue<string>()
+          const v = getValue<'long' | 'short' | null>()
+          if (!v) return null
           return (
             <span
               className={
@@ -1406,7 +1059,10 @@ export function TradesTable({
             }
           />
         ),
-        cell: ({ getValue }) => t(`trades.orderType.${getValue<string>()}`),
+        cell: ({ getValue }) => {
+          const v = getValue<string | null>()
+          return v ? t(`trades.orderType.${v}`) : null
+        },
       },
       {
         accessorKey: "avg_entry",
@@ -1423,11 +1079,10 @@ export function TradesTable({
             }
           />
         ),
-        cell: ({ getValue }) => (
-          <span className="tabular-nums">
-            {fmtCurrency(getValue<number>())}
-          </span>
-        ),
+        cell: ({ getValue }) => {
+          const v = getValue<number | null>()
+          return v != null ? <span className="tabular-nums">{fmtCurrency(v)}</span> : null
+        },
       },
       {
         accessorKey: "stop_loss",
@@ -1444,11 +1099,10 @@ export function TradesTable({
             }
           />
         ),
-        cell: ({ getValue }) => (
-          <span className="tabular-nums">
-            {fmtCurrency(getValue<number>())}
-          </span>
-        ),
+        cell: ({ getValue }) => {
+          const v = getValue<number | null>()
+          return v != null ? <span className="tabular-nums">{fmtCurrency(v)}</span> : null
+        },
       },
       {
         accessorKey: "avg_exit",
@@ -1465,11 +1119,10 @@ export function TradesTable({
             }
           />
         ),
-        cell: ({ getValue }) => (
-          <span className="tabular-nums">
-            {fmtCurrency(getValue<number>())}
-          </span>
-        ),
+        cell: ({ getValue }) => {
+          const v = getValue<number | null>()
+          return v != null ? <span className="tabular-nums">{fmtCurrency(v)}</span> : null
+        },
       },
       {
         accessorKey: "risk",
@@ -1486,11 +1139,10 @@ export function TradesTable({
             }
           />
         ),
-        cell: ({ getValue }) => (
-          <span className="tabular-nums">
-            {fmtCurrency(getValue<number>())}
-          </span>
-        ),
+        cell: ({ getValue }) => {
+          const v = getValue<number | null>()
+          return v != null ? <span className="tabular-nums">{fmtCurrency(v)}</span> : null
+        },
       },
       {
         accessorKey: "realised_loss",
@@ -1720,13 +1372,10 @@ export function TradesTable({
           />
         ),
         cell: ({ getValue }) => {
-          const v = getValue<boolean>()
+          const v = getValue<boolean | null>()
+          if (v === null) return null
           return (
-            <span
-              className={
-                v ? "text-green-600 dark:text-green-400" : "text-red-500"
-              }
-            >
+            <span className={v ? "text-green-600 dark:text-green-400" : "text-red-500"}>
               {t(v ? "trades.form.rulesYes" : "trades.form.rulesNo")}
             </span>
           )
@@ -1797,6 +1446,7 @@ export function TradesTable({
     getCoreRowModel: getCoreRowModel(),
     state: { columnOrder: displayColumnOrder, columnVisibility },
     onColumnOrderChange: setColumnOrder,
+    getRowId: (row) => row.id,
   })
 
   function renderCellMenuContent(
@@ -2108,185 +1758,60 @@ export function TradesTable({
                   )
                 }
 
-                // ── Saved draft row ───────────────────────────────────────────────
-                if (item.type === "draft") {
-                  const { idx, draft } = item
-                  const rowId = `new-${idx}`
-                  const rank = rankMap.get(draft.id!) ?? idx + 1
-                  const df = draft.fields
-                  const draftRaw: RawTrade = {
-                    id: draft.id!,
-                    patch_id: "",
-                    trade_number: rank,
-                    sort_order: draft.sortOrder,
-                    trade_date: df.trade_date ?? new Date().toISOString().split("T")[0],
-                    trade_time: df.trade_time ?? "00:00:00",
-                    ticker: df.ticker ?? "",
-                    direction: "long",
-                    order_type: df.order_type ?? "market",
-                    avg_entry: df.avg_entry ?? 0,
-                    stop_loss: df.stop_loss ?? 0,
-                    avg_exit: df.avg_exit ?? 0,
-                    risk: df.risk ?? 0,
-                    rules_followed: df.rules_followed ?? false,
-                    setup_type: df.setup_type ?? "",
-                    realised_win: df.realised_win ?? null,
-                    realised_loss: df.realised_loss ?? null,
-                    created_at: "",
-                    updated_at: "",
-                  }
-                  const allForEnrich = [...(trades as unknown as RawTrade[]), draftRaw]
-                  const enrichedDraft = enrichTrades(allForEnrich, formulaColumns)[allForEnrich.length - 1]
-                  const hasPrices = draftRaw.avg_entry > 0 && draftRaw.stop_loss > 0 && draftRaw.avg_exit > 0
-                  return (
-                    <TableRow key={rowId}>
-                      {table.getVisibleLeafColumns().map((col) => {
-                        const isPinned = col.id === PINNED_COLUMN
-                        const isEditing = editingCell?.rowId === rowId && editingCell?.columnId === col.id
-                        const draftCellContent =
-                          isEditing && col.id === "trade_date" ? (
-                            <DateCellEditor value={editValue} open onClose={cancelEdit} onCommit={saveAndClose} />
-                          ) : isEditing && isDropdownColumn(col.id) ? (
-                            <MenuCellEditor value={editValue} options={resolveOptions(col.id)} onClose={cancelEdit} onCommit={saveAndClose} />
-                          ) : isEditing ? (
-                            <input
-                              autoFocus
-                              type={col.id === "trade_time" ? "time" : "text"}
-                              value={editValue}
-                              onChange={(e) => setEditValue(e.target.value)}
-                              onBlur={() => validateAndCommit()}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") validateAndCommit()
-                                if (e.key === "Escape") cancelEdit()
-                              }}
-                              size={1}
-                              className="h-full w-full bg-transparent px-2 text-center text-sm outline-none [&::-webkit-calendar-picker-indicator]:hidden"
-                            />
-                          ) : isPinned ? (
-                            <span className="font-medium tabular-nums">{rank}</span>
-                          ) : (
-                            renderDraftCellContent(col.id, df, hasPrices, enrichedDraft)
-                          )
-                        return renderBodyCell(
-                          col.id,
-                          {
-                            isPinned,
-                            isEditing,
-                            columnId: col.id,
-                            content: draftCellContent,
-                            onDoubleClick: () => handleCellDoubleClick(rowId, col.id, ""),
-                          },
-                          {
-                            copyText: getDraftCopyText(col.id, df, hasPrices, enrichedDraft),
-                            tradeItems: (
-                              <>
-                                <ContextMenuItem onClick={() => handleInsertTrade(draft.id!, "before")}>
-                                  <ArrowUp className="size-4" />
-                                  {t("trades.insertTradeBefore")}
-                                </ContextMenuItem>
-                                <ContextMenuItem onClick={() => handleInsertTrade(draft.id!, "after")}>
-                                  <ArrowDown className="size-4" />
-                                  {t("trades.insertTradeAfter")}
-                                </ContextMenuItem>
-                                <ContextMenuItem onClick={() => onDuplicateTrade(draft.id!)}>
-                                  <Files className="size-4" />
-                                  {t("trades.duplicateTrade")}
-                                </ContextMenuItem>
-                                <ContextMenuItem
-                                  variant="destructive"
-                                  onClick={() => setTradeDeleteTarget({ id: draft.id!, number: rank, draftRowIndex: idx })}
-                                >
-                                  <Trash2 className="size-4" />
-                                  {t("trades.deleteTrade", { number: rank })}
-                                </ContextMenuItem>
-                              </>
-                            ),
-                          }
-                        )
-                      })}
-                    </TableRow>
-                  )
-                }
-
                 // ── Inserted blank row ────────────────────────────────────────────
                 const blank = item.blank
                 const rowId = `inserted-${blank.localId}`
                 const rank = rankMap.get(blank.localId) ?? 0
                 const df = blank.fields
 
-                const draftRaw: RawTrade = {
+                const partialRaw: RawTrade = {
                   id: blank.id ?? `__inserted_${blank.localId}`,
                   patch_id: "",
                   trade_number: rank,
                   sort_order: blank.sortOrder,
-                  trade_date:
-                    df.trade_date ?? new Date().toISOString().split("T")[0],
-                  trade_time: df.trade_time ?? "00:00:00",
-                  ticker: df.ticker ?? "",
-                  direction: "long",
-                  order_type: df.order_type ?? "market",
-                  avg_entry: df.avg_entry ?? 0,
-                  stop_loss: df.stop_loss ?? 0,
-                  avg_exit: df.avg_exit ?? 0,
-                  risk: df.risk ?? 0,
-                  rules_followed: df.rules_followed ?? false,
-                  setup_type: df.setup_type ?? "",
+                  trade_date: df.trade_date ?? null,
+                  trade_time: df.trade_time ?? null,
+                  ticker: df.ticker ?? null,
+                  direction: null,
+                  order_type: df.order_type ?? null,
+                  avg_entry: df.avg_entry ?? null,
+                  stop_loss: df.stop_loss ?? null,
+                  avg_exit: df.avg_exit ?? null,
+                  risk: df.risk ?? null,
+                  rules_followed: df.rules_followed ?? null,
+                  setup_type: df.setup_type ?? null,
                   realised_win: df.realised_win ?? null,
                   realised_loss: df.realised_loss ?? null,
                   created_at: "",
                   updated_at: "",
                 }
-                const allForEnrich = [
-                  ...(trades as unknown as RawTrade[]),
-                  draftRaw,
-                ]
-                const enrichedBlank =
-                  enrichTrades(allForEnrich, formulaColumns)[allForEnrich.length - 1]
-                const hasPrices =
-                  draftRaw.avg_entry > 0 &&
-                  draftRaw.stop_loss > 0 &&
-                  draftRaw.avg_exit > 0
+                const allForEnrich = [...(trades as unknown as RawTrade[]), partialRaw]
+                const enrichedPartial = enrichTrades(allForEnrich, formulaColumns)[allForEnrich.length - 1]
 
                 return (
                   <TableRow key={rowId}>
                     {table.getVisibleLeafColumns().map((col) => {
                       const isPinned = col.id === PINNED_COLUMN
-                      const isEditing =
-                        editingCell?.rowId === rowId &&
-                        editingCell?.columnId === col.id
+                      const isEditing = editingCell?.rowId === rowId && editingCell?.columnId === col.id
                       const cellContent =
                         isEditing && col.id === "trade_date" ? (
                           <>
-                            {renderDraftCellContent(
-                              col.id,
-                              df,
-                              hasPrices,
-                              enrichedBlank
-                            )}
+                            {renderPartialCellContent(col.id, df, enrichedPartial)}
                             <DateCellEditor
                               value={editValue}
                               open
                               onClose={cancelEdit}
-                              onCommit={(v) =>
-                                saveAndCloseInserted(blank.localId, col.id, v)
-                              }
+                              onCommit={(v) => saveAndCloseInserted(blank.localId, col.id, v)}
                             />
                           </>
                         ) : isEditing && isDropdownColumn(col.id) ? (
                           <>
-                            {renderDraftCellContent(
-                              col.id,
-                              df,
-                              hasPrices,
-                              enrichedBlank
-                            )}
+                            {renderPartialCellContent(col.id, df, enrichedPartial)}
                             <MenuCellEditor
                               value={editValue}
                               options={resolveOptions(col.id)}
                               onClose={cancelEdit}
-                              onCommit={(v) =>
-                                saveAndCloseInserted(blank.localId, col.id, v)
-                              }
+                              onCommit={(v) => saveAndCloseInserted(blank.localId, col.id, v)}
                             />
                           </>
                         ) : isEditing ? (
@@ -2295,28 +1820,18 @@ export function TradesTable({
                             type={col.id === "trade_time" ? "time" : "text"}
                             value={editValue}
                             onChange={(e) => setEditValue(e.target.value)}
-                            onBlur={() =>
-                              validateAndCommitInserted(blank.localId, col.id)
-                            }
+                            onBlur={() => validateAndCommitInserted(blank.localId, col.id)}
                             onKeyDown={(e) => {
-                              if (e.key === "Enter")
-                                validateAndCommitInserted(blank.localId, col.id)
+                              if (e.key === "Enter") validateAndCommitInserted(blank.localId, col.id)
                               if (e.key === "Escape") cancelEdit()
                             }}
                             size={1}
                             className="h-full w-full bg-transparent px-2 text-center text-sm outline-none [&::-webkit-calendar-picker-indicator]:hidden"
                           />
                         ) : isPinned ? (
-                          <span className="font-medium tabular-nums">
-                            {rank}
-                          </span>
+                          <span className="font-medium tabular-nums">{rank}</span>
                         ) : (
-                          renderDraftCellContent(
-                            col.id,
-                            df,
-                            hasPrices,
-                            enrichedBlank
-                          )
+                          renderPartialCellContent(col.id, df, enrichedPartial)
                         )
 
                       return renderBodyCell(
@@ -2329,7 +1844,7 @@ export function TradesTable({
                           onDoubleClick: () => handleCellDoubleClick(rowId, col.id, ""),
                         },
                         {
-                          copyText: getDraftCopyText(col.id, df, hasPrices, enrichedBlank),
+                          copyText: getPartialCopyText(col.id, df, enrichedPartial),
                           tradeItems: (
                             <>
                               <ContextMenuItem onClick={() => insertBlankAtSortOrder(blank.sortOrder, "before")}>
@@ -2360,155 +1875,19 @@ export function TradesTable({
                 )
               })}
 
-              {/* Blank new-trade rows — only unsaved slots (saved drafts are in mergedRows) */}
-              {(() => {
-                let bottomRank = mergedRows.length
-                let bottomIndex = -1
-                const maxSavedSortOrder = mergedRows.reduce((max, item) => {
-                  const s = item.type === "real" ? item.trade.sort_order : item.type === "draft" ? item.draft.sortOrder : item.blank.sortOrder
-                  return Math.max(max, s)
-                }, 0)
-                return Array.from({ length: blankRowCount }, (_, i) => {
-                const rowId = `new-${i}`
-                const draft = draftRows.get(i)
-                // Skip saved drafts — they are rendered in the mergedRows loop above
-                if (draft?.id) return null
-                bottomRank++
-                bottomIndex++
-                const rank = bottomRank
-                const virtualSortOrder = maxSavedSortOrder + bottomIndex + 1
-                const df = draft?.fields ?? {}
-
-                const draftRaw: RawTrade = {
-                  id: `__draft_${i}`,
-                  patch_id: "",
-                  trade_number: rank,
-                  sort_order: 0,
-                  trade_date:
-                    df.trade_date ?? new Date().toISOString().split("T")[0],
-                  trade_time: df.trade_time ?? "00:00:00",
-                  ticker: df.ticker ?? "",
-                  direction: "long",
-                  order_type: df.order_type ?? "market",
-                  avg_entry: df.avg_entry ?? 0,
-                  stop_loss: df.stop_loss ?? 0,
-                  avg_exit: df.avg_exit ?? 0,
-                  risk: df.risk ?? 0,
-                  rules_followed: df.rules_followed ?? false,
-                  setup_type: df.setup_type ?? "",
-                  realised_win: df.realised_win ?? null,
-                  realised_loss: df.realised_loss ?? null,
-                  created_at: "",
-                  updated_at: "",
-                }
-                const allForEnrich = [
-                  ...(trades as unknown as RawTrade[]),
-                  draftRaw,
-                ]
-                const enrichedDraft =
-                  enrichTrades(allForEnrich, formulaColumns)[allForEnrich.length - 1]
-                const hasPrices =
-                  draftRaw.avg_entry > 0 &&
-                  draftRaw.stop_loss > 0 &&
-                  draftRaw.avg_exit > 0
-
-                return (
-                  <TableRow key={rowId}>
-                    {table.getVisibleLeafColumns().map((col) => {
-                      const isPinned = col.id === PINNED_COLUMN
-                      const isEditing =
-                        editingCell?.rowId === rowId &&
-                        editingCell?.columnId === col.id
-                      const draftCellContent =
-                        isEditing && col.id === "trade_date" ? (
-                          <DateCellEditor
-                            value={editValue}
-                            open
-                            onClose={cancelEdit}
-                            onCommit={saveAndClose}
-                          />
-                        ) : isEditing && isDropdownColumn(col.id) ? (
-                          <MenuCellEditor
-                            value={editValue}
-                            options={resolveOptions(col.id)}
-                            onClose={cancelEdit}
-                            onCommit={saveAndClose}
-                          />
-                        ) : isEditing ? (
-                          <input
-                            autoFocus
-                            type={col.id === "trade_time" ? "time" : "text"}
-                            value={editValue}
-                            onChange={(e) => setEditValue(e.target.value)}
-                            onBlur={() => validateAndCommit()}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") validateAndCommit()
-                              if (e.key === "Escape") cancelEdit()
-                            }}
-                            size={1}
-                            className="h-full w-full bg-transparent px-2 text-center text-sm outline-none [&::-webkit-calendar-picker-indicator]:hidden"
-                          />
-                        ) : isPinned ? (
-                          <span className="font-medium tabular-nums">
-                            {rank}
-                          </span>
-                        ) : (
-                          renderDraftCellContent(
-                            col.id,
-                            df,
-                            hasPrices,
-                            enrichedDraft
-                          )
-                        )
-
-                      return renderBodyCell(
-                        col.id,
-                        {
-                          isPinned,
-                          isEditing,
-                          columnId: col.id,
-                          content: draftCellContent,
-                          onDoubleClick: () => handleCellDoubleClick(rowId, col.id, ""),
-                        },
-                        {
-                          copyText: getDraftCopyText(col.id, df, hasPrices, enrichedDraft),
-                          tradeItems: (
-                            <>
-                              <ContextMenuItem onClick={() => insertBlankAtSortOrder(virtualSortOrder, "before")}>
-                                <ArrowUp className="size-4" />
-                                {t("trades.insertTradeBefore")}
-                              </ContextMenuItem>
-                              <ContextMenuItem onClick={() => insertBlankAtSortOrder(virtualSortOrder, "after")}>
-                                <ArrowDown className="size-4" />
-                                {t("trades.insertTradeAfter")}
-                              </ContextMenuItem>
-                              {draft?.id && (
-                                <ContextMenuItem onClick={() => onDuplicateTrade(draft.id!)}>
-                                  <Files className="size-4" />
-                                  {t("trades.duplicateTrade")}
-                                </ContextMenuItem>
-                              )}
-                              <ContextMenuItem
-                                variant="destructive"
-                                onClick={() => setTradeDeleteTarget({ id: draft?.id ?? null, number: rank, draftRowIndex: i })}
-                              >
-                                <Trash2 className="size-4" />
-                                {t("trades.deleteTrade", { number: rank })}
-                              </ContextMenuItem>
-                            </>
-                          ),
-                        }
-                      )
-                    })}
-                  </TableRow>
-                )
-              })
-              })()}
-
-              {/* Add Trade row — colSpan fills the table width; sticky div inside keeps text pinned to the start */}
+              {/* Add Trade row */}
               <TableRow
                 className="group cursor-pointer border-t border-b border-[--color-border]"
-                onClick={() => setBlankRowCount((c) => c + 1)}
+                onClick={() => {
+                  const maxSortOrder = mergedRows.reduce((max, item) => {
+                    const s = item.type === "real" ? item.trade.sort_order : item.blank.sortOrder
+                    return Math.max(max, s)
+                  }, 0)
+                  setInsertedBlanks((prev) => [
+                    ...prev,
+                    { localId: crypto.randomUUID(), sortOrder: maxSortOrder + prev.length + 1, id: null, fields: {} },
+                  ])
+                }}
               >
                 <TableCell
                   colSpan={table.getVisibleLeafColumns().length}
@@ -2516,8 +1895,7 @@ export function TradesTable({
                 >
                   <div className="sticky inset-s-0 flex w-fit items-center gap-1.5 p-2 text-xs text-muted-foreground group-hover:text-foreground">
                     <Plus className="size-3" />
-                    {t("trades.addTrade")} #
-                    {mergedRows.length + Array.from(draftRows.values()).filter(d => !d.id).length + 1}
+                    {t("trades.addTrade")} #{mergedRows.length + 1}
                   </div>
                 </TableCell>
               </TableRow>
@@ -2658,24 +2036,8 @@ export function TradesTable({
                 e.preventDefault()
                 if (!tradeDeleteTarget) return
                 setIsDeletingTrade(true)
-                if (tradeDeleteTarget.id)
-                  await onDeleteTrade(tradeDeleteTarget.id)
+                await onDeleteTrade(tradeDeleteTarget.id)
                 setIsDeletingTrade(false)
-                if (tradeDeleteTarget.draftRowIndex !== undefined) {
-                  const deletedIdx = tradeDeleteTarget.draftRowIndex
-                  setDraftRows((prev) => {
-                    const next = new Map<number, DraftRow>()
-                    for (const [idx, row] of prev) {
-                      if (idx < deletedIdx) next.set(idx, row)
-                      else if (idx > deletedIdx) next.set(idx - 1, row)
-                    }
-                    return next
-                  })
-                  setBlankRowCount((prev) => {
-                    const next = Math.max(0, prev - 1)
-                    return trades.length === 0 && next === 0 ? 1 : next
-                  })
-                }
                 setTradeDeleteTarget(null)
               }}
             >

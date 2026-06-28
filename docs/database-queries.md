@@ -107,21 +107,19 @@ create table public.trades (
   patch_id uuid references public.patches(id) on delete cascade not null,
   trade_number int not null,
   sort_order float8 not null default 0,
-  trade_date date not null,
-  trade_time time not null,
-  ticker text not null,
-  direction text check (direction in ('long', 'short')) not null,
-  order_type text check (order_type in ('market', 'limit')) not null,
-  avg_entry numeric(20, 8) not null,
-  stop_loss numeric(20, 8) not null,
-  avg_exit numeric(20, 8) not null,
-  risk numeric(12, 2) not null,
+  trade_date date null,
+  trade_time time null,
+  ticker text null,
+  direction text check (direction in ('long', 'short') or direction is null) null,
+  order_type text check (order_type in ('market', 'limit') or order_type is null) null,
+  avg_entry numeric(20, 8) null,
+  stop_loss numeric(20, 8) null,
+  avg_exit numeric(20, 8) null,
+  risk numeric(12, 2) null,
   realised_win numeric(12, 2) null,
   realised_loss numeric(12, 2) null,
-  rules_followed boolean not null,
-  setup_type text not null,
-  is_draft boolean not null default false,
-  draft_fields jsonb null,
+  rules_followed boolean null,
+  setup_type text null,
   custom_data jsonb null,
   created_at timestamptz default now() not null,
   updated_at timestamptz default now() not null,
@@ -285,13 +283,14 @@ return ((risk - prev_risk) / prev_risk) * 100;'),
   (null, 'cumulative_pnl', 'Cumulative PnL $',
    'Total profit or loss in USD$ up to this trade.',
    'currency', true,
-   'return running_pnl + (pnl ?? 0);'),
+   'if (pnl == null) return null;
+return running_pnl + pnl;'),
 
   (null, 'cumulative_r', 'Cumulative R',
    'Total profit or loss in R multiples up to this trade.',
    'auto', true,
-   'const rm = typeof rest.r_multiple === ''number'' ? rest.r_multiple : 0;
-return running_r + rm;')
+   'if (typeof rest.r_multiple !== ''number'') return null;
+return running_r + rest.r_multiple;')
 
 on conflict do nothing;
 ```
@@ -379,4 +378,4 @@ $$;
 - [ ] Run `delete_column_data` function sixth
 - [ ] Confirm RLS is enabled: Table Editor → each table → RLS badge shows "Enabled"
 - [ ] Test with a real signup to confirm the profile trigger fires
-- [ ] Verify built-in rows: `select column_id from column_settings where user_id is null` should return 6 rows
+- [ ] Verify built-in rows: `select column_id from column_settings where user_id is null` should return 19 rows

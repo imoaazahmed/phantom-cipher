@@ -1,6 +1,6 @@
 {
   "nav": {
-    "brand": "Trading Logs",
+    "brand": "Phantom Cipher",
     "signIn": "Sign in",
     "getStarted": "Get started",
     "toggleTheme": "Toggle theme",
@@ -296,7 +296,7 @@
     }
   },
   "footer": {
-    "copyright": "© {{year}} Trading Logs. All rights reserved.",
+    "copyright": "© {{year}} Phantom Cipher. All rights reserved.",
     "privacy": "Privacy",
     "terms": "Terms"
   },

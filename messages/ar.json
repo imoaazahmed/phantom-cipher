@@ -1,6 +1,6 @@
 {
   "nav": {
-    "brand": "Trading Logs",
+    "brand": "Phantom Cipher",
     "signIn": "تسجيل الدخول",
     "getStarted": "ابدأ الآن",
     "toggleTheme": "تبديل المظهر",
@@ -296,7 +296,7 @@
     }
   },
   "footer": {
-    "copyright": "© {{year}} Trading Logs. جميع الحقوق محفوظة.",
+    "copyright": "© {{year}} Phantom Cipher. جميع الحقوق محفوظة.",
     "privacy": "الخصوصية",
     "terms": "الشروط"
   },

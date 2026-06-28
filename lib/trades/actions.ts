@@ -146,33 +146,13 @@ export async function getPatchTrades(
     .select('*')
     .eq('patch_id', patchId)
     .eq('user_id', user.id)
-    .neq('is_draft', true)
     .order('sort_order', { ascending: true })
 
   if (error) return { data: [], error: 'errors.generic' }
   return { data: (data ?? []) as RawTrade[], error: null }
 }
 
-export async function getPatchDraftTrades(
-  patchId: string
-): Promise<{ data: RawTrade[]; error: string | null }> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { data: [], error: 'errors.unauthorized' }
-
-  const { data, error } = await supabase
-    .from('trades')
-    .select('*')
-    .eq('patch_id', patchId)
-    .eq('user_id', user.id)
-    .eq('is_draft', true)
-    .order('sort_order', { ascending: true })
-
-  if (error) return { data: [], error: 'errors.generic' }
-  return { data: (data ?? []) as RawTrade[], error: null }
-}
-
-export async function createDraftTrade(
+export async function createPartialTrade(
   patchId: string,
   sortOrder?: number,
 ): Promise<{ data: RawTrade | null; error: string | null }> {
@@ -191,10 +171,6 @@ export async function createDraftTrade(
   const maxSortOrder = existing && existing.length > 0 ? (existing[0].sort_order as number) : 0
   const resolvedSortOrder = sortOrder ?? maxSortOrder + 1.0
 
-  const now = new Date()
-  const trade_date = now.toISOString().split('T')[0]
-  const trade_time = now.toTimeString().slice(0, 8)
-
   const { data, error } = await supabase
     .from('trades')
     .insert({
@@ -202,19 +178,6 @@ export async function createDraftTrade(
       patch_id: patchId,
       trade_number: nextNumber,
       sort_order: resolvedSortOrder,
-      trade_date,
-      trade_time,
-      ticker: '',
-      direction: 'long',
-      order_type: 'market',
-      avg_entry: 0,
-      stop_loss: 0,
-      avg_exit: 0,
-      risk: 0,
-      rules_followed: false,
-      setup_type: '',
-      is_draft: true,
-      draft_fields: [],
     })
     .select()
     .single()
@@ -235,6 +198,8 @@ export async function patchTrade(
   if (typeof fields.trade_time === 'string' && fields.trade_time.length === 5) {
     updateData.trade_time = fields.trade_time + ':00'
   }
+  // direction is computed by the formula engine — never persist it from patches
+  delete updateData.direction
 
   const { error } = await supabase
     .from('trades')
@@ -263,8 +228,7 @@ export async function addTrade(
 
   const nextNumber = existing && existing.length > 0 ? existing[0].trade_number + 1 : 1
 
-  // Convert HH:MM to HH:MM:SS for DB time column
-  const trade_time = formData.trade_time.length === 5
+  const trade_time = typeof formData.trade_time === 'string' && formData.trade_time.length === 5
     ? formData.trade_time + ':00'
     : formData.trade_time
 
@@ -289,7 +253,7 @@ export async function updateTrade(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'errors.unauthorized' }
 
-  const trade_time = formData.trade_time.length === 5
+  const trade_time = typeof formData.trade_time === 'string' && formData.trade_time.length === 5
     ? formData.trade_time + ':00'
     : formData.trade_time
 

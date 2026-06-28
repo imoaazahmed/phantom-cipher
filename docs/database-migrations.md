@@ -504,3 +504,47 @@ CREATE UNIQUE INDEX column_settings_user_name_unique_idx
   ON public.column_settings (user_id, lower(name))
   WHERE user_id IS NOT NULL;
 ```
+
+---
+
+## 2026-06-24 — Fix cumulative formula columns to return null when no PnL data
+
+`cumulative_pnl` and `cumulative_r` previously returned `0` for rows with no realised values, showing `$0.00` / `0.00R` instead of the formula indicator icon.
+
+```sql
+UPDATE public.column_settings
+SET formula = 'if (pnl == null) return null;
+return running_pnl + pnl;'
+WHERE column_id = 'cumulative_pnl' AND user_id IS NULL;
+
+UPDATE public.column_settings
+SET formula = 'if (typeof rest.r_multiple !== ''number'') return null;
+return running_r + rest.r_multiple;'
+WHERE column_id = 'cumulative_r' AND user_id IS NULL;
+```
+
+---
+
+## 2026-06-23 — Remove is_draft/draft_fields, make trade fields nullable
+
+Replaces the draft system with nullable fields. Partial trades are now regular rows with null values. No dummy defaults are inserted on row creation.
+
+```sql
+-- Drop draft columns
+ALTER TABLE public.trades DROP COLUMN IF EXISTS is_draft;
+ALTER TABLE public.trades DROP COLUMN IF EXISTS draft_fields;
+
+-- Make all user-entered fields nullable
+ALTER TABLE public.trades
+  ALTER COLUMN trade_date    DROP NOT NULL,
+  ALTER COLUMN trade_time    DROP NOT NULL,
+  ALTER COLUMN ticker        DROP NOT NULL,
+  ALTER COLUMN direction     DROP NOT NULL,
+  ALTER COLUMN order_type    DROP NOT NULL,
+  ALTER COLUMN avg_entry     DROP NOT NULL,
+  ALTER COLUMN stop_loss     DROP NOT NULL,
+  ALTER COLUMN avg_exit      DROP NOT NULL,
+  ALTER COLUMN risk          DROP NOT NULL,
+  ALTER COLUMN rules_followed DROP NOT NULL,
+  ALTER COLUMN setup_type    DROP NOT NULL;
+```

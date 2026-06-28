@@ -1,7 +1,8 @@
 // lib/trades/calculations.ts
 import type { RawTrade, EnrichedTrade, FormulaColumn, FormulaRow, TradePreview } from './types'
 
-export function deriveDirection(avg_entry: number, stop_loss: number): 'long' | 'short' {
+export function deriveDirection(avg_entry: number | null, stop_loss: number | null): 'long' | 'short' | null {
+  if (!avg_entry || !stop_loss) return null
   return avg_entry > stop_loss ? 'long' : 'short'
 }
 
@@ -30,19 +31,19 @@ export function enrichTrades(
     }
 
     const formulaRow: FormulaRow = {
-      avg_entry: trade.avg_entry,
-      avg_exit: trade.avg_exit,
-      stop_loss: trade.stop_loss,
-      risk: trade.risk,
-      realised_win: trade.realised_win,
-      realised_loss: trade.realised_loss,
-      direction: trade.direction,
-      order_type: trade.order_type,
-      ticker: trade.ticker,
-      trade_date: trade.trade_date,
-      trade_time: trade.trade_time,
-      rules_followed: trade.rules_followed,
-      setup_type: trade.setup_type,
+      avg_entry: trade.avg_entry ?? null,
+      avg_exit: trade.avg_exit ?? null,
+      stop_loss: trade.stop_loss ?? null,
+      risk: trade.risk ?? null,
+      realised_win: trade.realised_win ?? null,
+      realised_loss: trade.realised_loss ?? null,
+      direction: trade.direction ?? null,
+      order_type: trade.order_type ?? null,
+      ticker: trade.ticker ?? null,
+      trade_date: trade.trade_date ?? null,
+      trade_time: trade.trade_time ?? null,
+      rules_followed: trade.rules_followed ?? null,
+      setup_type: trade.setup_type ?? null,
       trade_number: trade.trade_number,
       ...primitives,
     }
