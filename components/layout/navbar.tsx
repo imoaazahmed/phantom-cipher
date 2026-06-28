@@ -6,15 +6,14 @@ import type { User } from "@supabase/supabase-js"
 import { ThemeToggle } from "@/components/layout/theme-toggle"
 import { UserMenu } from "@/components/layout/user-menu"
 import { LocaleSwitcher } from "@/components/locale-switcher"
-
 export function Navbar({ user }: { user: User }) {
   const { t } = useTranslation()
 
   return (
-    <header className="flex h-14 shrink-0 items-center border-b px-4 gap-2">
+    <header className="flex h-14 shrink-0 items-center border-b bg-background px-4 gap-3">
       <Link
         href="/overview"
-        className="me-auto font-heading text-sm font-semibold tracking-tight"
+        className="me-auto font-heading text-base font-semibold tracking-tight"
       >
         {t("nav.brand")}
       </Link>

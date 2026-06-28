@@ -10,7 +10,7 @@ export function LandingNavbar() {
   const { t } = useTranslation()
 
   return (
-    <header className="flex h-14 items-center border-b px-6 gap-2">
+    <header className="flex h-14 items-center border-b bg-background px-6 gap-2">
       <Link
         href="/"
         className="me-auto font-heading text-sm font-semibold tracking-tight"

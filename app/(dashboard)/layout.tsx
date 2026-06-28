@@ -1,7 +1,9 @@
+import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
+import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar"
 import { Navbar } from "@/components/layout/navbar"
-import { Sidebar } from "@/components/layout/sidebar"
+import { AppSidebar } from "@/components/layout/app-sidebar"
 
 export default async function DashboardLayout({
   children,
@@ -15,13 +17,18 @@ export default async function DashboardLayout({
 
   if (!user) redirect("/login")
 
+  const cookieStore = await cookies()
+  const defaultOpen = cookieStore.get("sidebar_state")?.value !== "false"
+
   return (
-    <div className="flex h-svh flex-col">
+    <SidebarProvider defaultOpen={defaultOpen} className="h-svh flex-col" style={{ "--sidebar-width": "207px" } as React.CSSProperties}>
       <Navbar user={user} />
-      <div className="flex flex-1 overflow-hidden">
-        <Sidebar />
-        <main className="flex-1 overflow-auto p-6">{children}</main>
+      <div className="flex flex-1 min-h-0">
+        <AppSidebar />
+        <SidebarInset className="overflow-auto bg-muted">
+          {children}
+        </SidebarInset>
       </div>
-    </div>
+    </SidebarProvider>
   )
 }

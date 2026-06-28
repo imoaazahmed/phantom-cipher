@@ -1,26 +1,25 @@
-# Database Queries
+# Database Schema
 
-Run these queries on **`trading-logs-prod`** before go-live.
-For development, run on **`trading-logs-dev`**.
+Complete SQL to run on a **fresh** database. Run sections in order.
 
 Supabase SQL editor: Dashboard → SQL Editor → New query.
+
+> For incremental changes to an existing database, see [`database-migrations.md`](database-migrations.md).
 
 ---
 
 ## Notes
 
-- Supabase handles the `auth.users` table automatically — do not create it manually.
+- Supabase handles `auth.users` automatically — do not create it manually.
 - All custom tables live in the `public` schema.
 - Enable **Row Level Security (RLS)** on every table immediately after creation.
 - Use `auth.uid()` in RLS policies to scope data to the logged-in user.
 
 ---
 
-## Tables
+## 1. profiles
 
-### profiles
-
-Extends `auth.users` with app-specific user data. Created automatically via trigger on signup.
+Extends `auth.users` with app-specific user data. Auto-created via trigger on signup.
 
 ```sql
 create table public.profiles (
@@ -33,16 +32,12 @@ create table public.profiles (
 
 alter table public.profiles enable row level security;
 
--- Users can only read and update their own profile
 create policy "Users can view their own profile"
-  on public.profiles for select
-  using (auth.uid() = id);
+  on public.profiles for select using (auth.uid() = id);
 
 create policy "Users can update their own profile"
-  on public.profiles for update
-  using (auth.uid() = id);
+  on public.profiles for update using (auth.uid() = id);
 
--- Auto-create profile on signup
 create or replace function public.handle_new_user()
 returns trigger as $$
 begin
@@ -63,65 +58,324 @@ create trigger on_auth_user_created
 
 ---
 
-### trades
+## 2. patches
 
-Core table. Each row is one manually logged trade.
+One row per batch of trades per user.
+
+```sql
+create table public.patches (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid references auth.users(id) on delete cascade not null,
+  patch_number int not null,
+  name text not null default 'New Patch',
+  patch_limit int not null default 100,
+  is_hidden boolean not null default false,
+  sort_order int not null default 0,
+  column_order jsonb null,
+  column_visibility jsonb null,
+  created_at timestamptz default now() not null,
+  unique (user_id, patch_number)
+);
+
+alter table public.patches enable row level security;
+
+create policy "Users can view their own patches"
+  on public.patches for select using (auth.uid() = user_id);
+
+create policy "Users can insert their own patches"
+  on public.patches for insert with check (auth.uid() = user_id);
+
+create policy "Users can update their own patches"
+  on public.patches for update using (auth.uid() = user_id);
+
+create policy "Users can delete their own patches"
+  on public.patches for delete using (auth.uid() = user_id);
+
+create index patches_user_id_idx on public.patches (user_id);
+```
+
+---
+
+## 3. trades
+
+One row per manually logged trade, linked to a patch.
 
 ```sql
 create table public.trades (
   id uuid default gen_random_uuid() primary key,
   user_id uuid references auth.users(id) on delete cascade not null,
-  symbol text not null,
-  direction text check (direction in ('long', 'short')) not null,
-  entry_price numeric not null,
-  exit_price numeric,
-  quantity numeric not null,
-  entry_date timestamptz not null,
-  exit_date timestamptz,
-  pnl numeric,
-  notes text,
+  patch_id uuid references public.patches(id) on delete cascade not null,
+  trade_number int not null,
+  sort_order float8 not null default 0,
+  trade_date date null,
+  trade_time time null,
+  ticker text null,
+  direction text check (direction in ('long', 'short') or direction is null) null,
+  order_type text check (order_type in ('market', 'limit') or order_type is null) null,
+  avg_entry numeric(20, 8) null,
+  stop_loss numeric(20, 8) null,
+  avg_exit numeric(20, 8) null,
+  risk numeric(12, 2) null,
+  realised_win numeric(12, 2) null,
+  realised_loss numeric(12, 2) null,
+  rules_followed boolean null,
+  setup_type text null,
+  custom_data jsonb null,
   created_at timestamptz default now() not null,
-  updated_at timestamptz default now() not null
+  updated_at timestamptz default now() not null,
+  unique (patch_id, trade_number)
 );
 
 alter table public.trades enable row level security;
 
--- Users can only access their own trades
 create policy "Users can view their own trades"
-  on public.trades for select
-  using (auth.uid() = user_id);
+  on public.trades for select using (auth.uid() = user_id);
 
 create policy "Users can insert their own trades"
-  on public.trades for insert
-  with check (auth.uid() = user_id);
+  on public.trades for insert with check (auth.uid() = user_id);
 
 create policy "Users can update their own trades"
-  on public.trades for update
-  using (auth.uid() = user_id);
+  on public.trades for update using (auth.uid() = user_id);
 
 create policy "Users can delete their own trades"
-  on public.trades for delete
-  using (auth.uid() = user_id);
+  on public.trades for delete using (auth.uid() = user_id);
+
+create index trades_user_id_idx on public.trades (user_id);
+create index trades_patch_id_idx on public.trades (patch_id);
+create index trades_patch_trade_number_idx on public.trades (patch_id, trade_number);
+create index trades_sort_order_idx on public.trades (patch_id, sort_order);
+create index trades_trade_date_idx on public.trades (trade_date desc);
 ```
 
 ---
 
-## Indexes
+## 4. column_settings
+
+Stores per-user column metadata and built-in formula column definitions. Built-in rows have `user_id = NULL`; user rows carry the owner's UUID.
 
 ```sql
--- Speed up per-user trade lookups
-create index trades_user_id_idx on public.trades (user_id);
+create table public.column_settings (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid references auth.users(id) on delete cascade null,
+  column_id text not null,
+  name text not null,
+  description text,
+  format_type text not null default 'auto'
+    check (format_type in ('auto', 'text', 'currency', 'number', 'percent', 'date', 'time', 'time24', 'dropdown')),
+  is_formula boolean not null default false,
+  formula text null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null
+);
 
--- Speed up date-range filtering
-create index trades_entry_date_idx on public.trades (entry_date desc);
+alter table public.column_settings enable row level security;
+
+-- Users see their own rows AND the built-in rows (user_id IS NULL)
+create policy "Users can view their column settings and built-ins"
+  on public.column_settings for select
+  using (auth.uid() = user_id or user_id is null);
+
+create policy "Users can insert their own column settings"
+  on public.column_settings for insert
+  with check (auth.uid() = user_id);
+
+create policy "Users can update their own column settings"
+  on public.column_settings for update
+  using (auth.uid() = user_id);
+
+create policy "Users can delete their own column settings"
+  on public.column_settings for delete
+  using (auth.uid() = user_id);
+
+create index column_settings_user_id_idx on public.column_settings (user_id);
+
+-- One user row per column_id per user
+create unique index column_settings_user_column_idx
+  on public.column_settings (user_id, column_id)
+  where user_id is not null;
+
+-- One built-in row per column_id (NULL != NULL in standard UNIQUE, so a partial index is required)
+create unique index column_settings_builtin_column_id_idx
+  on public.column_settings (column_id)
+  where user_id is null;
+
+-- column_id must be globally unique across all users and built-ins
+create unique index column_settings_column_id_global_idx
+  on public.column_settings (column_id);
+
+-- Column names must be unique per user (case-insensitive)
+create unique index column_settings_user_name_unique_idx
+  on public.column_settings (user_id, lower(name))
+  where user_id is not null;
+```
+
+Then seed all built-in column rows (non-formula + formula):
+
+```sql
+insert into public.column_settings
+  (user_id, column_id, name, description, format_type, is_formula, formula)
+values
+  -- Non-formula built-in columns
+  (null, 'trade_number', '#',
+   'Trade number', 'number', false, null),
+
+  (null, 'trade_date', 'Date',
+   'The date when the trade was placed or position was opened', 'date', false, null),
+
+  (null, 'trade_time', 'Time',
+   'The time when the trade was placed or position was opened', 'time', false, null),
+
+  (null, 'ticker', 'Ticker',
+   'The trading symbol, e.g. BTC, ETH', 'dropdown', false, null),
+
+  (null, 'order_type', 'Order Type',
+   'Market / Limit', 'dropdown', false, null),
+
+  (null, 'avg_entry', 'Avg Entry',
+   'Entry price for a single entry, or average entry price across partial entries', 'currency', false, null),
+
+  (null, 'stop_loss', 'Stop Loss',
+   'The price level where your stop loss was set', 'currency', false, null),
+
+  (null, 'avg_exit', 'Avg Exit',
+   'Final average price at which you exited the trade (win or loss)', 'currency', false, null),
+
+  (null, 'risk', 'Risk',
+   'Risk in USD$ including slippage and fees', 'currency', false, null),
+
+  (null, 'realised_loss', 'Realised Loss',
+   'Your PnL in USD$ if the trade was a loss', 'currency', false, null),
+
+  (null, 'realised_win', 'Realised Win',
+   'Your PnL in USD$ if the trade was a win', 'currency', false, null),
+
+  (null, 'rules_followed', 'Rules?',
+   'Did you follow the rules exactly? If NO, the challenge is considered failed', 'dropdown', false, null),
+
+  (null, 'setup_type', 'Setup Type',
+   'Strategy category, e.g. Trend Following, Pullback', 'dropdown', false, null),
+
+  -- Formula built-in columns
+  (null, 'direction', 'Direction',
+   'Long or short, derived from avg entry vs stop loss.',
+   'auto', true,
+   'if (!avg_entry || !stop_loss) return null;
+return avg_entry > stop_loss ? ''long'' : ''short'';'),
+
+  (null, 'r_multiple', 'R+/-',
+   'Profit or loss in R multiples. Max possible loss should be 1R.',
+   'auto', true,
+   'if (pnl == null || !risk) return null;
+return pnl / risk;'),
+
+  (null, 'deviation', 'Deviation',
+   'How much your Realised Loss exceeded your Risk due to slippage. 0% means you lost exactly your risk amount.',
+   'percent', true,
+   'if (realised_loss == null || !risk) return null;
+return ((realised_loss - risk) / risk) * 100;'),
+
+  (null, 'risk_volatility', 'Risk Volatility',
+   'Tracks trade-to-trade risk scaling consistency.',
+   'percent', true,
+   'if (prev_risk == null || !risk) return null;
+return ((risk - prev_risk) / prev_risk) * 100;'),
+
+  (null, 'cumulative_pnl', 'Cumulative PnL $',
+   'Total profit or loss in USD$ up to this trade.',
+   'currency', true,
+   'if (pnl == null) return null;
+return running_pnl + pnl;'),
+
+  (null, 'cumulative_r', 'Cumulative R',
+   'Total profit or loss in R multiples up to this trade.',
+   'auto', true,
+   'if (typeof rest.r_multiple !== ''number'') return null;
+return running_r + rest.r_multiple;')
+
+on conflict do nothing;
 ```
 
 ---
 
-## Checklist Before Running on Production
+---
+
+## 5. column_options
+
+Per-user custom options for menu columns (ticker, order_type, rules_followed, setup_type). When a user has rows here for a given `column_id`, those rows replace the hardcoded defaults. When no rows exist, the app falls back to `DEFAULT_MENU_OPTIONS` in `lib/trades/column-options.ts`.
+
+```sql
+create table public.column_options (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid references auth.users(id) on delete cascade not null,
+  column_id text not null,
+  value text not null,
+  label text not null,
+  position integer not null default 0,
+  created_at timestamptz default now() not null,
+  unique (user_id, column_id, value)
+);
+
+alter table public.column_options enable row level security;
+
+create policy "Users can manage their own column options"
+  on public.column_options for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create index column_options_user_id_idx on public.column_options (user_id);
+create index column_options_user_column_idx on public.column_options (user_id, column_id);
+```
+
+---
+
+## 6. Functions
+
+### delete_column_data
+
+Cleans up all traces of a custom column when it is deleted. Removes its key from `custom_data` in every trade, strips it from `column_order` arrays, and removes it from `column_visibility` objects — all scoped to the calling user.
+
+```sql
+create or replace function public.delete_column_data(p_column_id text)
+returns void
+language plpgsql
+as $$
+begin
+  -- Remove column values from every trade owned by the calling user
+  update public.trades
+  set custom_data = custom_data - p_column_id
+  where user_id = auth.uid()
+    and custom_data ? p_column_id;
+
+  -- Remove column from column_order arrays in patches
+  update public.patches
+  set column_order = (
+    select jsonb_agg(elem)
+    from jsonb_array_elements_text(column_order) as elem
+    where elem <> p_column_id
+  )
+  where user_id = auth.uid()
+    and column_order is not null
+    and column_order @> to_jsonb(p_column_id);
+
+  -- Remove column from column_visibility objects in patches
+  update public.patches
+  set column_visibility = column_visibility - p_column_id
+  where user_id = auth.uid()
+    and column_visibility ? p_column_id;
+end;
+$$;
+```
+
+---
+
+## Checklist
 
 - [ ] Run `profiles` table + trigger first
-- [ ] Run `trades` table
-- [ ] Run indexes
-- [ ] Confirm RLS is enabled: Supabase → Table Editor → each table → RLS badge should show "Enabled"
-- [ ] Test with a real signup to confirm profile trigger fires
+- [ ] Run `patches` table second (trades references patches)
+- [ ] Run `trades` table third
+- [ ] Run `column_settings` table + indexes + built-in seed fourth
+- [ ] Run `column_options` table fifth
+- [ ] Run `delete_column_data` function sixth
+- [ ] Confirm RLS is enabled: Table Editor → each table → RLS badge shows "Enabled"
+- [ ] Test with a real signup to confirm the profile trigger fires
+- [ ] Verify built-in rows: `select column_id from column_settings where user_id is null` should return 19 rows

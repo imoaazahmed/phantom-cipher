@@ -4,6 +4,7 @@ import Link from "next/link"
 import { useTranslation } from "react-i18next"
 import { useForm } from "react-hook-form"
 import { yupResolver } from "@hookform/resolvers/yup"
+import { useQueryState } from "nuqs"
 import { login } from "@/lib/auth/actions"
 import { loginSchema, type LoginFormValues } from "@/lib/schemas/auth"
 import { Button } from "@/components/ui/button"
@@ -21,6 +22,7 @@ import {
 
 export default function LoginPage() {
   const { t } = useTranslation()
+  const [errorParam] = useQueryState("error")
   const {
     register,
     handleSubmit,
@@ -43,9 +45,11 @@ export default function LoginPage() {
       </CardHeader>
       <form onSubmit={handleSubmit(onSubmit)} noValidate>
         <CardContent className="flex flex-col gap-4">
-          {errors.root && (
+          {(errors.root || errorParam === "auth_callback_failed") && (
             <p className="text-sm text-destructive">
-              {t(errors.root.message!, { defaultValue: errors.root.message })}
+              {errors.root
+                ? t(errors.root.message!, { defaultValue: errors.root.message })
+                : t("errors.authCallbackFailed")}
             </p>
           )}
           <div className="flex flex-col gap-1.5">

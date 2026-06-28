@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation"
 import { useTransition } from "react"
 import { useTranslation } from "react-i18next"
 import { Check, Languages } from "lucide-react"
+import { Spinner } from "@/components/ui/spinner"
 import { setLocale } from "@/app/actions"
 import { LOCALES, type Locale } from "@/lib/i18n"
 import { Button } from "@/components/ui/button"
@@ -37,8 +38,8 @@ export function LocaleSwitcher() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" disabled={isPending} aria-label="Switch language">
-          <Languages className="size-4" />
+        <Button variant="outline" size="icon-sm" disabled={isPending} aria-label="Switch language">
+          {isPending ? <Spinner /> : <Languages className="size-4" />}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">

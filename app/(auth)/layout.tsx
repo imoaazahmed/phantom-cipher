@@ -7,7 +7,7 @@ export default function AuthLayout({
   children: React.ReactNode
 }) {
   return (
-    <div className="flex min-h-svh flex-col">
+    <div className="flex min-h-svh flex-col bg-muted">
       <LandingNavbar />
       <div className="flex flex-1 items-center justify-center p-4">
         {children}

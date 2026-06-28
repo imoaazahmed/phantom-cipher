@@ -17,7 +17,7 @@ export default async function FullpageLayout({
   return (
     <div className="flex h-svh flex-col">
       <Navbar user={user} />
-      <main className="flex-1 overflow-auto p-6">{children}</main>
+      <main className="flex-1 overflow-auto bg-muted p-6">{children}</main>
     </div>
   )
 }

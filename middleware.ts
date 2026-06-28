@@ -32,11 +32,19 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl
 
+  // Pages that unauthenticated users can visit
   const isAuthPage =
     pathname.startsWith("/login") ||
     pathname.startsWith("/signup") ||
     pathname.startsWith("/forgot-password") ||
     pathname.startsWith("/reset-password")
+
+  // Pages that authenticated users should be bounced away from
+  // reset-password is excluded: it requires a fresh session after clicking the email link
+  const isGuestOnlyPage =
+    pathname.startsWith("/login") ||
+    pathname.startsWith("/signup") ||
+    pathname.startsWith("/forgot-password")
 
   // Redirect unauthenticated users away from protected routes
   if (!user && !isAuthPage && pathname !== "/" && !pathname.startsWith("/auth/")) {
@@ -45,8 +53,8 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // Redirect authenticated users away from auth pages
-  if (user && isAuthPage) {
+  // Redirect authenticated users away from guest-only pages
+  if (user && isGuestOnlyPage) {
     const url = request.nextUrl.clone()
     url.pathname = "/overview"
     return NextResponse.redirect(url)

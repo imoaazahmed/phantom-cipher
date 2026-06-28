@@ -8,6 +8,7 @@ import { NuqsAdapter } from "nuqs/adapters/next/app"
 import { I18nProvider } from "@/components/i18n-provider"
 import { DirectionProvider } from "@/components/ui/direction"
 import { cn } from "@/lib/utils"
+import { Toaster } from "@/components/ui/sonner"
 import {
   DEFAULT_LOCALE,
   LOCALE_COOKIE,
@@ -45,7 +46,7 @@ export default async function RootLayout({
       dir={dir}
       suppressHydrationWarning
       className={cn(
-        "antialiased",
+        "antialiased overscroll-none",
         fontMono.variable,
         "font-sans",
         inter.variable,
@@ -64,6 +65,7 @@ export default async function RootLayout({
                 messages={messages[locale]}
               >
                 {children}
+                <Toaster position="top-center" closeButton />
               </I18nProvider>
             </TooltipProvider>
           </ThemeProvider>
