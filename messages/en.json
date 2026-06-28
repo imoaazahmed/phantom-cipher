@@ -1,11 +1,21 @@
 {
   "nav": {
     "brand": "Phantom Cipher",
+    "trades": "Trades",
     "signIn": "Sign in",
     "getStarted": "Get started",
     "toggleTheme": "Toggle theme",
     "lightMode": "Light Mode",
-    "darkMode": "Dark Mode"
+    "darkMode": "Dark Mode",
+    "tools": {
+      "label": "Tools",
+      "positionCalculator": "Position Calculator",
+      "positionCalculatorDesc": "Calculate your ideal position size based on risk parameters.",
+      "returnCalculator": "Return Calculator",
+      "returnCalculatorDesc": "Simulate hypothetical trade outcomes based on your performance targets.",
+      "cdCalculator": "CD Investment Calculator",
+      "cdCalculatorDesc": "Find how much to invest in a fixed CD to cover recurring monthly payments."
+    }
   },
   "sidebar": {
     "overview": "Overview",
@@ -268,7 +278,6 @@
       "sectionTrade": "Trade",
       "sectionColumn": "Column"
     },
-    "addTrade": "Add Trade",
     "patches": {
       "newTitle": "New Patch",
       "renameTitle": "Rename Patch",
@@ -338,6 +347,54 @@
       "setupTypeRequired": "Setup type is required",
       "dateRequired": "Date is required",
       "timeRequired": "Time is required"
+    },
+    "required": "This field is required",
+    "positive": "Must be a positive number",
+    "integer": "Must be a whole number",
+    "maxRate": "Interest rate cannot exceed 100%"
+  },
+  "tools": {
+    "cdCalculator": {
+      "title": "CD Investment Calculator",
+      "description": "Calculate how much to invest in a fixed Certificate of Deposit to generate monthly payouts that cover your installments.",
+      "clearAll": "Clear all",
+      "tabs": {
+        "car": "Car",
+        "house": "House"
+      },
+      "sections": {
+        "car": "Car Installment",
+        "house": "Mortgage",
+        "cd": "Certificate of Deposit",
+        "results": "Results"
+      },
+      "fields": {
+        "monthlyInstallment": "Monthly installment",
+        "installmentPeriod": "Installment period",
+        "loanPeriod": "Loan period",
+        "interestRate": "Annual interest rate",
+        "interestRateNote": "The annual rate offered by the bank, paid out monthly",
+        "months": "Months",
+        "years": "Years",
+        "desc": {
+          "carMonthlyInstallment": "The fixed monthly payment amount for your car loan",
+          "carInstallmentPeriod": "The total duration of your car loan",
+          "houseMonthlyInstallment": "The fixed monthly payment amount for your mortgage",
+          "houseInstallmentPeriod": "The total duration of your mortgage"
+        }
+      },
+      "results": {
+        "empty": "Fill in the inputs to see your results.",
+        "cdAmount": "CD amount to invest",
+        "cdAmountNote": "One-time investment",
+        "monthlyPayout": "Monthly payout from CD",
+        "monthlyPayoutNote": "Covers your monthly installment",
+        "monthsToHold": "Months to hold CD",
+        "monthsValue": "{{count}} months",
+        "years": "{{count}} years",
+        "howItWorks": "How it works",
+        "howItWorksText": "A CD of {{amount}} at {{rate}}% annual interest paid monthly generates {{payout}}/month — exactly covering your installment for all {{months}} months without touching the principal."
+      }
     }
   }
 }

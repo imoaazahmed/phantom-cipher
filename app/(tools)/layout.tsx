@@ -1,21 +1,22 @@
-import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
+import { Navbar } from "@/components/layout/navbar"
 import { LandingNavbar } from "@/components/layout/landing-navbar"
-import { LandingHero } from "@/components/landing/hero"
 import { LandingFooter } from "@/components/layout/landing-footer"
 
-export default async function RootPage() {
+export default async function ToolsLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
   const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
 
-  if (user) redirect("/trades/overview")
-
   return (
     <div className="flex min-h-svh flex-col">
-      <LandingNavbar />
-      <LandingHero />
+      {user ? <Navbar user={user} /> : <LandingNavbar />}
+      <main className="flex-1">{children}</main>
       <LandingFooter />
     </div>
   )

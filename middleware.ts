@@ -47,7 +47,7 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/forgot-password")
 
   // Redirect unauthenticated users away from protected routes
-  if (!user && !isAuthPage && pathname !== "/" && !pathname.startsWith("/auth/")) {
+  if (!user && !isAuthPage && pathname !== "/" && !pathname.startsWith("/auth/") && !pathname.startsWith("/tools/")) {
     const url = request.nextUrl.clone()
     url.pathname = "/login"
     return NextResponse.redirect(url)
@@ -56,7 +56,7 @@ export async function middleware(request: NextRequest) {
   // Redirect authenticated users away from guest-only pages
   if (user && isGuestOnlyPage) {
     const url = request.nextUrl.clone()
-    url.pathname = "/overview"
+    url.pathname = "/trades/overview"
     return NextResponse.redirect(url)
   }
 

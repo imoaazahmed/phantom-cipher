@@ -21,8 +21,8 @@ export function AppSidebar() {
   const side = i18n.dir() === "rtl" ? "right" : "left"
 
   const links = [
-    { href: "/overview", label: t("sidebar.overview"), icon: LayoutDashboard },
-    { href: "/trades", label: t("sidebar.trades"), icon: TrendingUp },
+    { href: "/trades/overview", label: t("sidebar.overview"), icon: LayoutDashboard },
+    { href: "/trades/patches", label: t("sidebar.trades"), icon: TrendingUp },
   ]
 
   return (

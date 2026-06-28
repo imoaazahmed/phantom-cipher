@@ -1,11 +1,21 @@
 {
   "nav": {
     "brand": "Phantom Cipher",
+    "trades": "التداولات",
     "signIn": "تسجيل الدخول",
     "getStarted": "ابدأ الآن",
     "toggleTheme": "تبديل المظهر",
     "lightMode": "الوضع الفاتح",
-    "darkMode": "الوضع الداكن"
+    "darkMode": "الوضع الداكن",
+    "tools": {
+      "label": "الأدوات",
+      "positionCalculator": "حاسبة حجم الصفقة",
+      "positionCalculatorDesc": "احسب حجم مركزك المثالي بناءً على معاملات المخاطرة.",
+      "returnCalculator": "حاسبة العوائد",
+      "returnCalculatorDesc": "محاكاة نتائج صفقات افتراضية بناءً على أهداف أدائك.",
+      "cdCalculator": "حاسبة الشهادات البنكية",
+      "cdCalculatorDesc": "احسب المبلغ الذي تحتاج استثماره في شهادة بنكية لتغطية أقساط شهرية منتظمة."
+    }
   },
   "sidebar": {
     "overview": "نظرة عامة",
@@ -268,7 +278,6 @@
       "sectionTrade": "الصفقة",
       "sectionColumn": "العمود"
     },
-    "addTrade": "إضافة صفقة",
     "patches": {
       "newTitle": "دفعة جديدة",
       "renameTitle": "إعادة تسمية الدفعة",
@@ -338,6 +347,54 @@
       "setupTypeRequired": "نوع الإعداد مطلوب",
       "dateRequired": "التاريخ مطلوب",
       "timeRequired": "الوقت مطلوب"
+    },
+    "required": "هذا الحقل مطلوب",
+    "positive": "يجب أن يكون رقماً موجباً",
+    "integer": "يجب أن يكون رقماً صحيحاً",
+    "maxRate": "لا يمكن أن يتجاوز معدل الفائدة 100%"
+  },
+  "tools": {
+    "cdCalculator": {
+      "title": "حاسبة الشهادات البنكية",
+      "description": "احسب المبلغ الذي تحتاج استثماره في شهادة بنكية ثابتة لتوليد عائد شهري يغطي أقساطك.",
+      "clearAll": "مسح الكل",
+      "tabs": {
+        "car": "سيارة",
+        "house": "منزل"
+      },
+      "sections": {
+        "car": "قسط السيارة",
+        "house": "الرهن العقاري",
+        "cd": "شهادة الإيداع",
+        "results": "النتائج"
+      },
+      "fields": {
+        "monthlyInstallment": "القسط الشهري",
+        "installmentPeriod": "مدة التقسيط",
+        "loanPeriod": "مدة القرض",
+        "interestRate": "معدل الفائدة السنوي",
+        "interestRateNote": "المعدل السنوي الذي تقدمه البنك، يُصرف شهرياً",
+        "months": "أشهر",
+        "years": "سنوات",
+        "desc": {
+          "carMonthlyInstallment": "قيمة القسط الشهري الثابت لقرض السيارة",
+          "carInstallmentPeriod": "المدة الإجمالية لقرض السيارة",
+          "houseMonthlyInstallment": "قيمة القسط الشهري الثابت للرهن العقاري",
+          "houseInstallmentPeriod": "المدة الإجمالية للرهن العقاري"
+        }
+      },
+      "results": {
+        "empty": "أدخل البيانات لعرض النتائج.",
+        "cdAmount": "المبلغ المطلوب استثماره في الشهادة",
+        "cdAmountNote": "استثمار لمرة واحدة",
+        "monthlyPayout": "العائد الشهري من الشهادة",
+        "monthlyPayoutNote": "يغطي قسطك الشهري",
+        "monthsToHold": "مدة الاحتفاظ بالشهادة",
+        "monthsValue": "{{count}} شهر",
+        "years": "{{count}} سنة",
+        "howItWorks": "كيف يعمل الحساب",
+        "howItWorksText": "شهادة بقيمة {{amount}} بفائدة {{rate}}% سنوياً تُصرف شهرياً تُولّد {{payout}} شهرياً — تغطي قسطك كاملاً لمدة {{months}} شهراً دون المساس بالأصل."
+      }
     }
   }
 }

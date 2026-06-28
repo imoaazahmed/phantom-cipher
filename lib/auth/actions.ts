@@ -7,7 +7,7 @@ export async function login(data: { email: string; password: string }) {
   const supabase = await createClient()
   const { error } = await supabase.auth.signInWithPassword(data)
   if (error) return { error: error.message }
-  redirect("/overview")
+  redirect("/trades/overview")
 }
 
 export async function signup(data: { email: string; password: string }) {
@@ -42,5 +42,5 @@ export async function resetPassword(data: { password: string }) {
   const supabase = await createClient()
   const { error } = await supabase.auth.updateUser({ password: data.password })
   if (error) return { error: error.message }
-  redirect("/overview")
+  redirect("/trades/overview")
 }

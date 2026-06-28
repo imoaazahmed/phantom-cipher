@@ -263,9 +263,9 @@ const EDITABLE_COLUMNS = new Set([
 ])
 
 const colShadow =
-  "before:pointer-events-none before:absolute before:inset-y-0 before:start-full before:w-4 before:bg-[linear-gradient(to_right,rgb(0_0_0/0.07),transparent)] rtl:before:bg-[linear-gradient(to_left,rgb(0_0_0/0.07),transparent)] dark:before:bg-[linear-gradient(to_right,rgb(255_255_255/0.1),transparent)] dark:rtl:before:bg-[linear-gradient(to_left,rgb(255_255_255/0.1),transparent)]"
+  "before:pointer-events-none before:absolute before:inset-y-0 before:start-full before:w-2 before:bg-[linear-gradient(to_right,rgb(0_0_0/0.12),transparent)] rtl:before:bg-[linear-gradient(to_left,rgb(0_0_0/0.12),transparent)] dark:before:bg-[linear-gradient(to_right,rgb(255_255_255/0.15),transparent)] dark:rtl:before:bg-[linear-gradient(to_left,rgb(255_255_255/0.15),transparent)]"
 const rowShadow =
-  "after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-4 after:bg-[linear-gradient(to_bottom,rgb(0_0_0/0.07),transparent)] dark:after:bg-[linear-gradient(to_bottom,rgb(255_255_255/0.1),transparent)]"
+  "after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-2 after:bg-[linear-gradient(to_bottom,rgb(0_0_0/0.12),transparent)] dark:after:bg-[linear-gradient(to_bottom,rgb(255_255_255/0.15),transparent)]"
 
 type DraggableHeaderProps = {
   id: string
