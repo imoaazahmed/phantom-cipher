@@ -1,4 +1,7 @@
 {
+  "common": {
+    "scrollToTop": "Up"
+  },
   "nav": {
     "brand": "Phantom Cipher",
     "trades": "Trades",
@@ -446,7 +449,8 @@
         "maxDrawdownPct": "Max drawdown, %"
       },
       "chart": {
-        "title": "Trade Return Curve"
+        "title": "Trade Return Curve",
+        "trade": "Trade"
       },
       "table": {
         "title": "Per-Trade Breakdown",
@@ -456,6 +460,21 @@
         "endingBalance": "Ending balance",
         "totalProfit": "Total profit",
         "totalGain": "Total gain"
+      },
+      "info": {
+        "title": "What is the Trade Return Calculator?",
+        "intro": "This calculator simulates the long-term outcome of a trading strategy using compound growth. Enter your key parameters and see how risk, reward, and win rate stack up across dozens or hundreds of trades.",
+        "item1Label": "Start balance",
+        "item1Desc": "The amount of capital you begin with. Every trade's profit or loss is calculated as a percentage of your running balance, so the starting figure sets the scale for the entire simulation.",
+        "item2Label": "Number of trades",
+        "item2Desc": "How many trades to simulate. Compounding becomes more pronounced the further out you project — try 100 versus 400 to see the difference.",
+        "item3Label": "Risk per trade",
+        "item3Desc": "The percentage of your current balance you put at risk on each trade. Keeping this consistent is the foundation of position sizing and capital preservation.",
+        "item4Label": "Risk / Reward ratio",
+        "item4Desc": "How much you stand to gain relative to what you risk. A ratio of 3 means you target $3 for every $1 risked. Higher ratios can be profitable even with a lower win rate.",
+        "item5Label": "Win rate",
+        "item5Desc": "The percentage of trades that close in profit. This works together with your RR ratio to determine your real statistical edge — a 40% win rate with a 3:1 RR is still a positive expectancy system.",
+        "note": "Results update automatically as you type. The chart and table are reshuffled randomly on every change so you can see how the sequence of wins and losses affects your equity curve — even when the overall statistics stay the same."
       }
     },
     "cdCalculator": {

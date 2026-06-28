@@ -61,6 +61,7 @@ import {
   InputGroupText,
 } from "@/components/ui/input-group"
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field"
+import { ScrollToTopButton } from "@/components/ui/scroll-to-top-button"
 import { CurrencyPicker } from "@/components/ui/currency-picker"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 
@@ -248,13 +249,23 @@ function generateTradeData(
   numTrades: number,
   riskPct: number,
   rr: number,
-  winRatePct: number
+  profitableTrades: number,
+  losingTrades: number
 ): TradeRow[] {
+  // Build exact win/loss sequence then shuffle — preserves counts and end balance
+  const outcomes: boolean[] = [
+    ...Array(profitableTrades).fill(true),
+    ...Array(losingTrades).fill(false),
+  ]
+  for (let i = outcomes.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [outcomes[i], outcomes[j]] = [outcomes[j], outcomes[i]]
+  }
+
   const rows: TradeRow[] = []
   let balance = startBalance
-  const winProb = winRatePct / 100
   for (let i = 0; i < numTrades; i++) {
-    const win = Math.random() < winProb
+    const win = outcomes[i]
     const startingBalance = balance
     const profit = win
       ? startingBalance * (riskPct / 100) * rr
@@ -400,7 +411,7 @@ export default function ReturnCalculatorPage() {
   useEffect(() => {
     const r = mounted ? compute(values) : null
     if (!r) { setTradeData([]); return }
-    setTradeData(generateTradeData(r.startBalance, r.numTrades, parseNum(values.risk), parseNum(values.rr), parseNum(values.winRate)))
+    setTradeData(generateTradeData(r.startBalance, r.numTrades, parseNum(values.risk), parseNum(values.rr), r.profitableTrades, r.losingTrades))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted, values.startBalance, values.numTrades, values.risk, values.rr, values.winRate])
 
@@ -704,6 +715,26 @@ export default function ReturnCalculatorPage() {
         </Card>
       )}
 
+      {/* Info section */}
+      <Card>
+        <CardContent className="pt-6 space-y-5">
+          <h2 className="text-2xl font-semibold">{t("tools.returnCalculator.info.title")}</h2>
+          <p className="text-base text-muted-foreground leading-relaxed">{t("tools.returnCalculator.info.intro")}</p>
+          <ol className="space-y-4 list-decimal list-inside">
+            {(["1","2","3","4","5"] as const).map((n) => (
+              <li key={n} className="text-base text-muted-foreground leading-relaxed">
+                <strong className="text-foreground font-semibold">{t(`tools.returnCalculator.info.item${n}Label`)}</strong>
+                {" — "}
+                {t(`tools.returnCalculator.info.item${n}Desc`)}
+              </li>
+            ))}
+          </ol>
+          <p className="text-sm text-muted-foreground leading-relaxed border-t pt-4">{t("tools.returnCalculator.info.note")}</p>
+        </CardContent>
+      </Card>
+
+      <ScrollToTopButton />
+
       {/* Delete preset dialog */}
       <AlertDialog open={!!deletePreset} onOpenChange={(open) => { if (!open) setDeletePreset(null) }}>
         <AlertDialogContent>
@@ -805,11 +836,13 @@ function BalanceTooltip({
   payload,
   label,
   currencySymbol,
+  tradeLabel,
 }: {
   active?: boolean
   payload?: Array<{ value: number }>
   label?: number
   currencySymbol: string
+  tradeLabel: string
 }) {
   if (!active || !payload?.length) return null
   return (
@@ -819,13 +852,15 @@ function BalanceTooltip({
         <span className="text-sm font-bold tabular-nums text-card-foreground">
           {currencySymbol}{Math.round(payload[0].value).toLocaleString()}
         </span>
-        <span className="text-muted-foreground">Trade {label}</span>
+        <span className="text-muted-foreground">{tradeLabel} {label}</span>
       </div>
     </div>
   )
 }
 
 function TradeReturnChart({ data, currency }: { data: { trade: number; balance: number }[]; currency: string }) {
+  const { t } = useTranslation()
+
   const currencySymbol = (() => {
     try {
       return (0).toLocaleString("en", { style: "currency", currency, maximumFractionDigits: 0 }).replace(/[\d,.\s]/g, "")
@@ -841,7 +876,7 @@ function TradeReturnChart({ data, currency }: { data: { trade: number; balance: 
   })()
 
   return (
-    <ChartContainer config={chartConfig} className="h-75 w-full">
+    <ChartContainer config={chartConfig} className="h-75 w-full" dir="ltr">
       <AreaChart data={data} margin={{ top: 12, right: 16, left: 16, bottom: 4 }}>
         <defs>
           <linearGradient id="balanceFill" x1="0" y1="0" x2="0" y2="1">
@@ -871,7 +906,7 @@ function TradeReturnChart({ data, currency }: { data: { trade: number; balance: 
         />
         <ChartTooltip
           cursor={{ stroke: "var(--border)", strokeWidth: 1 }}
-          content={<BalanceTooltip currencySymbol={currencySymbol} />}
+          content={<BalanceTooltip currencySymbol={currencySymbol} tradeLabel={t("tools.returnCalculator.chart.trade")} />}
         />
         <Area
           type="monotone"
