@@ -54,7 +54,7 @@ export default async function RootLayout({
         notoSansArabic.variable
       )}
     >
-      <body>
+      <body suppressHydrationWarning>
         <NuqsAdapter>
         <DirectionProvider dir={dir}>
           <ThemeProvider>

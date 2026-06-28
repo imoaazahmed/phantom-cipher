@@ -1,14 +1,33 @@
 "use client"
 
 import React, { useEffect, useRef, useState } from "react"
-import { useForm, useWatch } from "react-hook-form"
+import { useForm, useWatch, UseFormSetValue } from "react-hook-form"
 import { yupResolver } from "@hookform/resolvers/yup"
 import * as yup from "yup"
 import { useTranslation } from "react-i18next"
-import { Car, House } from "lucide-react"
+import { Car, House, X } from "lucide-react"
+import { ScrollArea as ScrollAreaPrimitive } from "radix-ui"
 import { Button } from "@/components/ui/button"
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
 import {
   InputGroup,
   InputGroupAddon,
@@ -23,10 +42,33 @@ import {
   FieldLabel,
 } from "@/components/ui/field"
 import { CurrencyPicker } from "@/components/ui/currency-picker"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 
 // --- Storage keys ---
 const STORAGE_ACTIVE_TAB = "phantom-cipher:cd-calculator:active-tab"
 const tabKey = (id: string) => `phantom-cipher:cd-calculator:${id}`
+const presetsKey = (tabId: string) => `phantom-cipher:cd-calculator:${tabId}:presets`
+
+// --- Presets ---
+type CdPreset = {
+  id: string
+  name: string
+  values: Partial<FormValues>
+  currency: string
+  periodUnit: PeriodUnit
+}
+
+function loadCdPresets(tabId: string): CdPreset[] {
+  try {
+    const raw = localStorage.getItem(presetsKey(tabId))
+    if (raw) return JSON.parse(raw)
+  } catch {}
+  return []
+}
+
+function saveCdPresets(tabId: string, presets: CdPreset[]) {
+  try { localStorage.setItem(presetsKey(tabId), JSON.stringify(presets)) } catch {}
+}
 
 // --- Tab definitions ---
 type FieldType = "currency" | "period" | "rate"
@@ -132,6 +174,12 @@ const schema = yup.object({
 function sanitizeDecimal(val: string) { return val.replace(/[^0-9,.]/g, "") }
 function sanitizeInteger(val: string) { return val.replace(/[^0-9,]/g, "") }
 
+function applyThousands(val: string): string {
+  const [intPart, ...rest] = val.replace(/,/g, "").split(".")
+  const formatted = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",")
+  return rest.length > 0 ? `${formatted}.${rest.join(".")}` : formatted
+}
+
 function formatCurrency(value: number, currencyCode: string) {
   try {
     return new Intl.NumberFormat("en", {
@@ -162,6 +210,15 @@ export default function CdCalculatorPage() {
   const [activeTab, setActiveTab] = useState(TABS[0].id)
   const [periodUnit, setPeriodUnit] = useState<PeriodUnit>("months")
   const [currency, setCurrency] = useState("USD")
+  const [presets, setPresets] = useState<Record<string, CdPreset[]>>(
+    Object.fromEntries(TABS.map((tab) => [tab.id, []]))
+  )
+  const [activePresetId, setActivePresetId] = useState<string | null>(null)
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false)
+  const [presetName, setPresetName] = useState("")
+  const [presetNameError, setPresetNameError] = useState("")
+  const [deletePreset, setDeletePreset] = useState<CdPreset | null>(null)
+  const isLoadingPreset = useRef(false)
 
   // Snapshot of all tab states so we can save the leaving tab on switch
   const tabStatesRef = useRef<Record<string, TabState>>(
@@ -170,7 +227,7 @@ export default function CdCalculatorPage() {
 
   const {
     register,
-    formState: { errors },
+    formState: { errors, isValid },
     setValue,
     reset,
     control,
@@ -197,7 +254,8 @@ export default function CdCalculatorPage() {
 
     setActiveTab(initialTab)
     applyTabState(allStates[initialTab])
-    setMounted(true)
+    setPresets(Object.fromEntries(TABS.map((tab) => [tab.id, loadCdPresets(tab.id)])))
+    setTimeout(() => setMounted(true), 0)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -229,6 +287,7 @@ export default function CdCalculatorPage() {
     const state = currentTabState()
     tabStatesRef.current[activeTab] = state
     saveTabState(activeTab, state)
+    if (!isLoadingPreset.current) setActivePresetId(null)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [values.monthlyInstallment, values.installmentPeriod, values.interestRate, periodUnit, currency])
 
@@ -237,6 +296,7 @@ export default function CdCalculatorPage() {
     const state = currentTabState()
     tabStatesRef.current[activeTab] = state
     saveTabState(activeTab, state)
+    setActivePresetId(null)
 
     // Switch to new tab
     setActiveTab(tabId)
@@ -251,6 +311,55 @@ export default function CdCalculatorPage() {
     setPeriodUnit(cleared.periodUnit)
     setCurrency(cleared.currency)
     reset({ monthlyInstallment: "", installmentPeriod: "", interestRate: "" })
+    setActivePresetId(null)
+  }
+
+  function handleSavePreset() {
+    const trimmed = presetName.trim()
+    if (!trimmed) { setPresetNameError(t("tools.cdCalculator.presets.nameRequired")); return }
+    const tabPresets = presets[activeTab] ?? []
+    if (tabPresets.some((p) => p.name === trimmed)) { setPresetNameError(t("tools.cdCalculator.presets.nameTaken")); return }
+    const newPreset: CdPreset = {
+      id: crypto.randomUUID(),
+      name: trimmed,
+      values: {
+        monthlyInstallment: values.monthlyInstallment,
+        installmentPeriod: values.installmentPeriod,
+        interestRate: values.interestRate,
+      },
+      currency,
+      periodUnit,
+    }
+    const updated = { ...presets, [activeTab]: [...tabPresets, newPreset] }
+    setPresets(updated)
+    saveCdPresets(activeTab, updated[activeTab])
+    setActivePresetId(newPreset.id)
+    setSaveDialogOpen(false)
+    setPresetName("")
+    setPresetNameError("")
+  }
+
+  function handleLoadPreset(presetId: string) {
+    const preset = (presets[activeTab] ?? []).find((p) => p.id === presetId)
+    if (!preset) return
+    isLoadingPreset.current = true
+    setCurrency(preset.currency)
+    setPeriodUnit(preset.periodUnit)
+    reset({
+      monthlyInstallment: preset.values.monthlyInstallment ?? "",
+      installmentPeriod: preset.values.installmentPeriod ?? "",
+      interestRate: preset.values.interestRate ?? "",
+    })
+    setActivePresetId(presetId)
+    setTimeout(() => { isLoadingPreset.current = false }, 0)
+  }
+
+  function handleDeletePreset(presetId: string) {
+    const updated = { ...presets, [activeTab]: (presets[activeTab] ?? []).filter((p) => p.id !== presetId) }
+    setPresets(updated)
+    saveCdPresets(activeTab, updated[activeTab])
+    if (activePresetId === presetId) setActivePresetId(null)
+    setDeletePreset(null)
   }
 
   function handlePeriodUnitToggle(unit: PeriodUnit) {
@@ -297,12 +406,55 @@ export default function CdCalculatorPage() {
                     <CardTitle className="uppercase tracking-wide text-muted-foreground">
                       {t(tab.sectionLabelKey)}
                     </CardTitle>
-                    <CardAction>
-                      <Button variant="outline" size="sm" onClick={handleClear}>
+                    <CardAction className="flex items-center gap-2">
+                      <Button variant="outline" onClick={handleClear}>
                         {t("tools.cdCalculator.clearAll")}
+                      </Button>
+                      <Button disabled={!isValid} onClick={() => { setPresetName(""); setPresetNameError(""); setSaveDialogOpen(true) }}>
+                        {t("tools.cdCalculator.presets.save")}
                       </Button>
                     </CardAction>
                   </CardHeader>
+                  {(presets[tab.id]?.length ?? 0) > 0 && (
+                    <div className="px-(--card-spacing) -mt-2 pb-1">
+                      <ScrollAreaPrimitive.Root className="w-full">
+                        <ScrollAreaPrimitive.Viewport className="w-full">
+                          <ToggleGroup
+                            type="single"
+                            variant="outline"
+                            size="sm"
+                            spacing={1}
+                            value={activePresetId ?? ""}
+                            onValueChange={(val) => { if (val) handleLoadPreset(val) }}
+                            className="flex-nowrap justify-start pb-2"
+                          >
+                            {(presets[tab.id] ?? []).map((preset) => (
+                              <ToggleGroupItem
+                                key={preset.id}
+                                value={preset.id}
+                                className="group/preset shrink-0 text-xs gap-1.5"
+                              >
+                                {preset.name}
+                                <span
+                                  role="button"
+                                  className="text-muted-foreground hover:text-foreground transition-colors"
+                                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDeletePreset(preset) }}
+                                >
+                                  <X className="size-3" />
+                                </span>
+                              </ToggleGroupItem>
+                            ))}
+                          </ToggleGroup>
+                        </ScrollAreaPrimitive.Viewport>
+                        <ScrollAreaPrimitive.Scrollbar
+                          orientation="horizontal"
+                          className="flex h-2 flex-col border-t border-t-transparent p-px"
+                        >
+                          <ScrollAreaPrimitive.Thumb className="relative flex-1 rounded-none bg-border" />
+                        </ScrollAreaPrimitive.Scrollbar>
+                      </ScrollAreaPrimitive.Root>
+                    </div>
+                  )}
                   <CardContent className="space-y-5">
                   {tab.fields.map((field) => {
                     const inputId = `${tab.id}-${field.key}`
@@ -311,8 +463,8 @@ export default function CdCalculatorPage() {
 
                     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
                       e.target.value = isDecimal
-                        ? sanitizeDecimal(e.target.value)
-                        : sanitizeInteger(e.target.value)
+                        ? applyThousands(sanitizeDecimal(e.target.value))
+                        : applyThousands(sanitizeInteger(e.target.value))
                       rhfOnChange(e)
                     }
 
@@ -369,6 +521,17 @@ export default function CdCalculatorPage() {
                         {errors[field.key] && (
                           <FieldError>{t(errors[field.key]!.message!)}</FieldError>
                         )}
+
+                        {field.type === "period" && (
+                          <QuickOptions
+                            options={periodUnit === "months"
+                              ? ["12", "24", "36", "60", "84"]
+                              : ["1", "2", "3", "5", "7"]}
+                            field="installmentPeriod"
+                            current={values.installmentPeriod}
+                            setValue={setValue}
+                          />
+                        )}
                       </Field>
                     )
                   })}
@@ -397,7 +560,7 @@ export default function CdCalculatorPage() {
                           <InputGroupInput
                             {...rest}
                             onChange={(e) => {
-                              e.target.value = sanitizeDecimal(e.target.value)
+                              e.target.value = applyThousands(sanitizeDecimal(e.target.value))
                               rhfOnChange(e)
                             }}
                             id={`${tab.id}-interestRate`}
@@ -424,48 +587,121 @@ export default function CdCalculatorPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                {!result ? (
-                  <p className="text-base text-muted-foreground pt-2">{t("tools.cdCalculator.results.empty")}</p>
-                ) : (
-                  <div className="space-y-4">
-                    <ResultRow
-                      label={t("tools.cdCalculator.results.cdAmount")}
-                      value={formatCurrency(result.cdAmount, currency)}
-                      note={t("tools.cdCalculator.results.cdAmountNote")}
-                      highlight
-                    />
-                    <div className="border-t" />
-                    <ResultRow
-                      label={t("tools.cdCalculator.results.monthlyPayout")}
-                      value={formatCurrency(result.monthlyPayout, currency)}
-                      note={t("tools.cdCalculator.results.monthlyPayoutNote")}
-                    />
-                    <ResultRow
-                      label={t("tools.cdCalculator.results.monthsToHold")}
-                      value={t("tools.cdCalculator.results.monthsValue", { count: result.monthsToHold })}
-                      note={t("tools.cdCalculator.results.years", { count: (result.monthsToHold / 12).toFixed(1) })}
-                    />
-                    <div className="border-t" />
-                    <div className="space-y-1 pt-1">
-                      <p className="text-sm font-medium text-muted-foreground">{t("tools.cdCalculator.results.howItWorks")}</p>
-                      <p className="text-sm text-muted-foreground leading-relaxed">
-                        {t("tools.cdCalculator.results.howItWorksText", {
-                          amount: formatCurrency(result.cdAmount, currency),
-                          rate: values.interestRate,
-                          payout: formatCurrency(result.monthlyPayout, currency),
-                          months: result.monthsToHold,
-                        })}
-                      </p>
-                    </div>
-                  </div>
-                )}
+                <div className="space-y-4">
+                  <ResultRow
+                    label={t("tools.cdCalculator.results.cdAmount")}
+                    value={result ? formatCurrency(result.cdAmount, currency) : "-"}
+                    note={t("tools.cdCalculator.results.cdAmountNote")}
+                    highlight
+                  />
+                  <div className="border-t" />
+                  <ResultRow
+                    label={t("tools.cdCalculator.results.monthlyPayout")}
+                    value={result ? formatCurrency(result.monthlyPayout, currency) : "-"}
+                    note={t("tools.cdCalculator.results.monthlyPayoutNote")}
+                  />
+                  <ResultRow
+                    label={t("tools.cdCalculator.results.monthsToHold")}
+                    value={result ? t("tools.cdCalculator.results.monthsValue", { count: result.monthsToHold }) : "-"}
+                    note={result ? t("tools.cdCalculator.results.years", { count: (result.monthsToHold / 12).toFixed(1) }) : undefined}
+                  />
+                  {result && (
+                    <>
+                      <div className="border-t" />
+                      <div className="space-y-1 pt-1">
+                        <p className="text-sm font-medium text-muted-foreground">{t("tools.cdCalculator.results.howItWorks")}</p>
+                        <p className="text-sm text-muted-foreground leading-relaxed">
+                          {t("tools.cdCalculator.results.howItWorksText", {
+                            amount: formatCurrency(result.cdAmount, currency),
+                            rate: values.interestRate,
+                            payout: formatCurrency(result.monthlyPayout, currency),
+                            months: result.monthsToHold,
+                          })}
+                        </p>
+                      </div>
+                    </>
+                  )}
+                </div>
                 </CardContent>
               </Card>
             </div>
           </TabsContent>
         ))}
       </Tabs>
+
+      <AlertDialog open={!!deletePreset} onOpenChange={(open) => { if (!open) setDeletePreset(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("tools.cdCalculator.presets.deleteTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("tools.cdCalculator.presets.deleteDesc", { name: deletePreset?.name })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("tools.cdCalculator.presets.cancel")}</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={() => deletePreset && handleDeletePreset(deletePreset.id)}>
+              {t("tools.cdCalculator.presets.deleteConfirm")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog open={saveDialogOpen} onOpenChange={setSaveDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("tools.cdCalculator.presets.dialogTitle")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Input
+              placeholder={t("tools.cdCalculator.presets.namePlaceholder")}
+              value={presetName}
+              onChange={(e) => { setPresetName(e.target.value); setPresetNameError("") }}
+              onKeyDown={(e) => { if (e.key === "Enter") handleSavePreset() }}
+              autoFocus
+            />
+            {presetNameError && <p className="text-xs text-destructive">{presetNameError}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSaveDialogOpen(false)}>
+              {t("tools.cdCalculator.presets.cancel")}
+            </Button>
+            <Button onClick={handleSavePreset}>
+              {t("tools.cdCalculator.presets.dialogConfirm")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
+  )
+}
+
+function QuickOptions({
+  options,
+  field,
+  current,
+  setValue,
+}: {
+  options: string[]
+  field: keyof FormValues
+  current: string | undefined
+  setValue: UseFormSetValue<FormValues>
+}) {
+  return (
+    <ToggleGroup
+      type="single"
+      variant="default"
+      size="sm"
+      spacing={1}
+      value={options.includes(current ?? "") ? (current ?? "") : ""}
+      onValueChange={(val) => { if (val) setValue(field, val, { shouldValidate: true }) }}
+      className="flex-wrap justify-start"
+    >
+      {options.map((opt) => (
+        <ToggleGroupItem key={opt} value={opt} className="h-6 px-2 text-xs">
+          {opt}
+        </ToggleGroupItem>
+      ))}
+    </ToggleGroup>
   )
 }
 
